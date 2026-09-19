@@ -6,7 +6,9 @@ import { socket } from './lib/socket'
 function App() {
   const [showRoom, setShowRoom] = useState(false)
   const [showJoin, setShowJoin] = useState(false)
-    useEffect(() => {
+  const [roomId, setRoomId] = useState('')
+
+  useEffect(() => {
     socket.connect()
 
     const handleConnect = () => {
@@ -28,8 +30,8 @@ function App() {
   }, [])
 
   if (showRoom) {
-    return <Room />
-  }
+  return <Room roomId={roomId} />
+}
 
   return (
     <div className="app">
@@ -47,9 +49,11 @@ function App() {
             </p>
 
             <input
-              type="text"
-              placeholder="Enter Room ID"
-            />
+  type="text"
+  placeholder="Enter Room ID"
+  value={roomId}
+  onChange={(e) => setRoomId(e.target.value)}
+/>
 
             <div className="join-actions">
 
@@ -61,11 +65,14 @@ function App() {
               </button>
 
               <button
-                className="join-confirm-btn"
-                onClick={() => setShowRoom(true)}
-              >
-                Join Room
-              </button>
+  className="join-confirm-btn"
+  onClick={() => {
+    socket.emit("joinRoom", roomId)
+    setShowRoom(true)
+  }}
+>
+  Join Room
+</button>
 
             </div>
 
@@ -113,7 +120,12 @@ function App() {
 
           <button
             className="get-started-btn"
-            onClick={() => setShowRoom(true)}
+            onClick={() => {
+              const newRoomId = `room-${Math.random().toString(36).substring(2, 8)}`
+              setRoomId(newRoomId)
+              socket.emit("joinRoom", newRoomId)
+              setShowRoom(true)
+            }}
           >
             Get Started
           </button>
@@ -152,7 +164,12 @@ function App() {
 
               <button
                 className="primary-btn"
-                onClick={() => setShowRoom(true)}
+                onClick={() => {
+                  const newRoomId = `room-${Math.random().toString(36).substring(2, 8)}`
+                  setRoomId(newRoomId)
+                  socket.emit("joinRoom", newRoomId)
+                  setShowRoom(true)
+                }}
               >
                 Create a Room →
               </button>

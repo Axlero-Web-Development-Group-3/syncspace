@@ -1,6 +1,6 @@
 import './Room.css'
 
-function Room() {
+function Room({ roomId }) {
   return (
     <div className="room-page">
 
@@ -11,9 +11,9 @@ function Room() {
         </div>
 
         <div className="room-info">
-          <span>Room:</span>
-          <strong>room-42</strong>
-        </div>
+         <span>Room:</span>
+         <strong>{roomId}</strong>
+      </div>
 
         <div className="online-users">
           <span className="online-dot"></span>
