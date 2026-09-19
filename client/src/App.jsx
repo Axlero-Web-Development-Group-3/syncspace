@@ -1,10 +1,31 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 import Room from './Room'
+import { socket } from './lib/socket'
 
 function App() {
   const [showRoom, setShowRoom] = useState(false)
   const [showJoin, setShowJoin] = useState(false)
+    useEffect(() => {
+    socket.connect()
+
+    const handleConnect = () => {
+      console.log("Socket connected:", socket.id)
+    }
+
+    const handleDisconnect = () => {
+      console.log("Socket disconnected")
+    }
+
+    socket.on("connect", handleConnect)
+    socket.on("disconnect", handleDisconnect)
+
+    return () => {
+      socket.off("connect", handleConnect)
+      socket.off("disconnect", handleDisconnect)
+      socket.disconnect()
+    }
+  }, [])
 
   if (showRoom) {
     return <Room />
