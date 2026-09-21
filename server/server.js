@@ -32,12 +32,28 @@ app.get("/api/health", (req, res) => {
 io.on("connection", (socket) => {
   console.log("client connected:", socket.id);
 
+  // Join room
   socket.on("joinRoom", (roomId) => {
     socket.join(roomId);
 
     console.log(`${socket.id} joined room: ${roomId}`);
   });
 
+  // Pen drawing
+  socket.on("drawLine", ({ roomId, line }) => {
+    socket.to(roomId).emit("drawLine", line);
+  });
+
+  // Rectangle drawing
+  socket.on("drawRectangle", ({ roomId, rectangle }) => {
+    socket.to(roomId).emit("drawRectangle", rectangle);
+  });
+  // Text drawing
+socket.on("drawText", ({ roomId, text }) => {
+  socket.to(roomId).emit("drawText", text);
+});
+
+  // Disconnect
   socket.on("disconnect", () => {
     console.log("client disconnected:", socket.id);
   });

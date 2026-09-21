@@ -1,6 +1,7 @@
 import './Room.css'
 import { Stage, Layer, Line, Rect, Text } from 'react-konva'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { socket } from './lib/socket'
 
 function Room({ roomId }) {
   const [lines, setLines] = useState([])
@@ -14,10 +15,42 @@ function Room({ roomId }) {
   const isDrawing = useRef(false)
   const startPoint = useRef(null)
 
+  // Join room and listen for drawings
+  useEffect(() => {
+    socket.emit('joinRoom', roomId)
+
+    // Receive pen drawing from another user
+    const handleRemoteLine = (line) => {
+      setLines((prev) => [...prev, line])
+    }
+
+    // Receive rectangle from another user
+    const handleRemoteRectangle = (rectangle) => {
+      setRectangles((prev) => [...prev, rectangle])
+    }
+
+    // Receive text from another user
+    const handleRemoteText = (text) => {
+      setTexts((prev) => [...prev, text])
+    }
+
+    socket.on('drawLine', handleRemoteLine)
+    socket.on('drawRectangle', handleRemoteRectangle)
+    socket.on('drawText', handleRemoteText)
+
+    return () => {
+      socket.off('drawLine', handleRemoteLine)
+      socket.off('drawRectangle', handleRemoteRectangle)
+      socket.off('drawText', handleRemoteText)
+    }
+  }, [roomId])
+
+  // Mouse Down
   const handleMouseDown = (e) => {
     const stage = e.target.getStage()
     const pos = stage.getPointerPosition()
 
+    // Text tool
     if (tool === 'text') {
       setTextPosition({
         x: pos.x,
@@ -28,6 +61,7 @@ function Room({ roomId }) {
       return
     }
 
+    // Start drawing
     isDrawing.current = true
 
     startPoint.current = {
@@ -35,6 +69,7 @@ function Room({ roomId }) {
       y: pos.y,
     }
 
+    // Start pen line
     if (tool === 'pen') {
       setLines((prev) => [
         ...prev,
@@ -42,6 +77,7 @@ function Room({ roomId }) {
       ])
     }
 
+    // Start rectangle
     if (tool === 'rectangle') {
       setRectangles((prev) => [
         ...prev,
@@ -55,12 +91,14 @@ function Room({ roomId }) {
     }
   }
 
+  // Mouse Move
   const handleMouseMove = (e) => {
     if (!isDrawing.current) return
 
     const stage = e.target.getStage()
     const point = stage.getPointerPosition()
 
+    // Pen
     if (tool === 'pen') {
       setLines((prev) => {
         if (prev.length === 0) return prev
@@ -80,6 +118,7 @@ function Room({ roomId }) {
       })
     }
 
+    // Rectangle
     if (tool === 'rectangle') {
       const start = startPoint.current
 
@@ -88,7 +127,8 @@ function Room({ roomId }) {
       setRectangles((prev) => {
         if (prev.length === 0) return prev
 
-        const lastRectangle = prev[prev.length - 1]
+        const lastRectangle =
+          prev[prev.length - 1]
 
         const updatedRectangle = {
           ...lastRectangle,
@@ -104,27 +144,79 @@ function Room({ roomId }) {
     }
   }
 
+  // Mouse Up
   const handleMouseUp = () => {
+    if (!isDrawing.current) return
+
+    // Send pen drawing
+    if (tool === 'pen') {
+      setLines((currentLines) => {
+        if (currentLines.length === 0) {
+          return currentLines
+        }
+
+        const lastLine =
+          currentLines[currentLines.length - 1]
+
+        socket.emit('drawLine', {
+          roomId,
+          line: lastLine,
+        })
+
+        return currentLines
+      })
+    }
+
+    // Send rectangle
+    if (tool === 'rectangle') {
+      setRectangles((currentRectangles) => {
+        if (currentRectangles.length === 0) {
+          return currentRectangles
+        }
+
+        const lastRectangle =
+          currentRectangles[currentRectangles.length - 1]
+
+        socket.emit('drawRectangle', {
+          roomId,
+          rectangle: lastRectangle,
+        })
+
+        return currentRectangles
+      })
+    }
+
     isDrawing.current = false
     startPoint.current = null
   }
 
+  // Add Text
   const handleAddText = () => {
     if (!textInput.trim() || !textPosition) return
 
+    const newText = {
+      x: textPosition.x,
+      y: textPosition.y,
+      text: textInput,
+    }
+
+    // Show text on current user's screen
     setTexts((prev) => [
       ...prev,
-      {
-        x: textPosition.x,
-        y: textPosition.y,
-        text: textInput,
-      },
+      newText,
     ])
+
+    // Send text to other users
+    socket.emit('drawText', {
+      roomId,
+      text: newText,
+    })
 
     setTextInput('')
     setTextPosition(null)
   }
 
+  // Cancel Text
   const handleCancelText = () => {
     setTextInput('')
     setTextPosition(null)
@@ -133,29 +225,51 @@ function Room({ roomId }) {
   return (
     <div className="room-page">
 
-      {/* ================= HEADER ================= */}
-
+      {/* HEADER */}
       <header className="room-header">
 
         <div className="room-logo">
-          <span className="room-logo-icon">S</span>
+
+          <span className="room-logo-icon">
+            S
+          </span>
 
           <div className="room-logo-text">
-            <span className="brand-name">SyncSpace</span>
-            <span className="brand-subtitle">Collaborative Workspace</span>
+
+            <span className="brand-name">
+              SyncSpace
+            </span>
+
+            <span className="brand-subtitle">
+              Collaborative Workspace
+            </span>
+
           </div>
+
         </div>
 
         <div className="room-center-info">
-          <span className="room-label">ROOM</span>
-          <span className="room-id">{roomId}</span>
+
+          <span className="room-label">
+            ROOM
+          </span>
+
+          <span className="room-id">
+            {roomId}
+          </span>
+
         </div>
 
         <div className="room-actions">
 
           <div className="online-users">
+
             <span className="online-dot"></span>
-            <span>2 online</span>
+
+            <span>
+              2 online
+            </span>
+
           </div>
 
           <button className="share-btn">
@@ -166,21 +280,22 @@ function Room({ roomId }) {
 
       </header>
 
-
-      {/* ================= WORKSPACE ================= */}
-
+      {/* WORKSPACE */}
       <main className="workspace">
 
-        {/* ================= WHITEBOARD ================= */}
-
+        {/* WHITEBOARD */}
         <section className="whiteboard-panel">
 
           <div className="panel-header">
 
             <div className="panel-title">
-              <span className="panel-icon">✦</span>
+
+              <span className="panel-icon">
+                ✦
+              </span>
 
               <div>
+
                 <span className="panel-name">
                   Whiteboard
                 </span>
@@ -188,7 +303,9 @@ function Room({ roomId }) {
                 <span className="panel-description">
                   Visual collaboration
                 </span>
+
               </div>
+
             </div>
 
             <span className="live-badge">
@@ -197,51 +314,82 @@ function Room({ roomId }) {
 
           </div>
 
-
-          {/* Drawing Toolbar */}
-
+          {/* TOOLBAR */}
           <div className="drawing-toolbar">
 
+            {/* PEN */}
             <button
               className={`tool-button ${
-                tool === 'pen' ? 'tool-active' : ''
+                tool === 'pen'
+                  ? 'tool-active'
+                  : ''
               }`}
               onClick={() => setTool('pen')}
             >
-              <span className="tool-icon">✎</span>
-              <span>Pen</span>
+
+              <span className="tool-icon">
+                ✎
+              </span>
+
+              <span>
+                Pen
+              </span>
+
             </button>
 
+            {/* RECTANGLE */}
             <button
               className={`tool-button ${
-                tool === 'rectangle' ? 'tool-active' : ''
+                tool === 'rectangle'
+                  ? 'tool-active'
+                  : ''
               }`}
-              onClick={() => setTool('rectangle')}
+              onClick={() =>
+                setTool('rectangle')
+              }
             >
-              <span className="tool-icon">□</span>
-              <span>Rectangle</span>
+
+              <span className="tool-icon">
+                □
+              </span>
+
+              <span>
+                Rectangle
+              </span>
+
             </button>
 
+            {/* TEXT */}
             <button
               className={`tool-button ${
-                tool === 'text' ? 'tool-active' : ''
+                tool === 'text'
+                  ? 'tool-active'
+                  : ''
               }`}
               onClick={() => setTool('text')}
             >
-              <span className="tool-icon">T</span>
-              <span>Text</span>
+
+              <span className="tool-icon">
+                T
+              </span>
+
+              <span>
+                Text
+              </span>
+
             </button>
 
           </div>
 
-
-          {/* Whiteboard */}
-
+          {/* WHITEBOARD AREA */}
           <div className="whiteboard-area">
 
             <div className="canvas-label">
+
               <span className="canvas-status"></span>
+
               Drawing Canvas
+
             </div>
 
             <Stage
@@ -255,8 +403,7 @@ function Room({ roomId }) {
 
               <Layer>
 
-                {/* Lines */}
-
+                {/* PEN LINES */}
                 {lines.map((line, index) => (
                   <Line
                     key={`line-${index}`}
@@ -268,25 +415,23 @@ function Room({ roomId }) {
                   />
                 ))}
 
+                {/* RECTANGLES */}
+                {rectangles.map(
+                  (rectangle, index) => (
+                    <Rect
+                      key={`rectangle-${index}`}
+                      x={rectangle.x}
+                      y={rectangle.y}
+                      width={rectangle.width}
+                      height={rectangle.height}
+                      stroke="#6366f1"
+                      strokeWidth={3}
+                      fill="rgba(99, 102, 241, 0.06)"
+                    />
+                  )
+                )}
 
-                {/* Rectangles */}
-
-                {rectangles.map((rectangle, index) => (
-                  <Rect
-                    key={`rectangle-${index}`}
-                    x={rectangle.x}
-                    y={rectangle.y}
-                    width={rectangle.width}
-                    height={rectangle.height}
-                    stroke="#6366f1"
-                    strokeWidth={3}
-                    fill="rgba(99, 102, 241, 0.06)"
-                  />
-                ))}
-
-
-                {/* Text */}
-
+                {/* TEXT */}
                 {texts.map((item, index) => (
                   <Text
                     key={`text-${index}`}
@@ -303,9 +448,7 @@ function Room({ roomId }) {
 
             </Stage>
 
-
-            {/* Text Input */}
-
+            {/* TEXT INPUT */}
             {textPosition && (
               <div
                 className="text-input-box"
@@ -338,11 +481,15 @@ function Room({ roomId }) {
 
                 <div className="text-input-actions">
 
-                  <button onClick={handleAddText}>
+                  <button
+                    onClick={handleAddText}
+                  >
                     Add
                   </button>
 
-                  <button onClick={handleCancelText}>
+                  <button
+                    onClick={handleCancelText}
+                  >
                     Cancel
                   </button>
 
@@ -355,19 +502,19 @@ function Room({ roomId }) {
 
         </section>
 
-
-        {/* ================= CODE EDITOR ================= */}
-
+        {/* CODE EDITOR */}
         <section className="code-panel">
 
           <div className="panel-header">
 
             <div className="panel-title">
+
               <span className="panel-icon code-icon">
                 &lt;/&gt;
               </span>
 
               <div>
+
                 <span className="panel-name">
                   Code Editor
                 </span>
@@ -375,7 +522,9 @@ function Room({ roomId }) {
                 <span className="panel-description">
                   Shared workspace
                 </span>
+
               </div>
+
             </div>
 
             <span className="language-badge">
@@ -384,14 +533,15 @@ function Room({ roomId }) {
 
           </div>
 
-
-          {/* Editor Tabs */}
-
+          {/* EDITOR TABS */}
           <div className="editor-tabs">
 
             <div className="editor-tab active-tab">
+
               <span className="js-dot"></span>
+
               index.js
+
             </div>
 
             <div className="editor-tab">
@@ -400,9 +550,7 @@ function Room({ roomId }) {
 
           </div>
 
-
-          {/* Code */}
-
+          {/* CODE AREA */}
           <div className="code-area">
 
             <div className="code-content">
@@ -431,7 +579,6 @@ function Room({ roomId }) {
               </pre>
 
             </div>
-
 
             <div className="editor-footer">
 
