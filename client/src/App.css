@@ -957,3 +957,166 @@ a {
   }
 
 }
+/* ================================
+   Room Workspace
+================================ */
+
+.room-page {
+  min-height: 100vh;
+  background: #080b12;
+  color: #f8fafc;
+}
+
+.room-header {
+  height: 64px;
+  padding: 0 24px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0d121b;
+}
+
+.room-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.room-logo-icon {
+  width: 32px;
+  height: 32px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 8px;
+
+  background: linear-gradient(135deg, #6366f1, #3b82f6);
+
+  color: white;
+  font-weight: 800;
+}
+
+.room-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.room-info strong {
+  color: #e2e8f0;
+}
+
+.online-users {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.workspace {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+
+  height: calc(100vh - 64px);
+  gap: 1px;
+
+  background: #252b38;
+}
+
+.whiteboard-panel,
+.code-panel {
+  min-width: 0;
+  background: #101722;
+}
+
+.panel-header {
+  height: 44px;
+
+  display: flex;
+  align-items: center;
+
+  padding: 0 16px;
+
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+
+  background: #111722;
+
+  color: #64748b;
+
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+
+.whiteboard-area {
+  position: relative;
+
+  height: calc(100% - 44px);
+
+  overflow: hidden;
+
+  background:
+    linear-gradient(
+      rgba(255, 255, 255, 0.025) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.025) 1px,
+      transparent 1px
+    ),
+    #0d141f;
+
+  background-size: 25px 25px;
+}
+
+/* Make Konva canvas visible and interactive */
+.whiteboard-area canvas {
+  display: block;
+  cursor: crosshair;
+}
+
+.code-area {
+  height: calc(100% - 44px);
+
+  padding: 24px;
+
+  overflow: auto;
+
+  background: #0b1018;
+}
+
+.code-area pre {
+  margin: 0;
+
+  color: #aeb9d0;
+
+  font-family: "Courier New", monospace;
+
+  font-size: 14px;
+
+  line-height: 1.8;
+}
+
+.editor-note {
+  display: block;
+
+  margin-top: 25px;
+
+  color: #64748b;
+
+  font-size: 12px;
+}

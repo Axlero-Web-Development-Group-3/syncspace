@@ -2,174 +2,836 @@
   box-sizing: border-box;
 }
 
+body {
+  margin: 0;
+}
+
+
+/* =========================
+   ROOM PAGE
+========================= */
+
 .room-page {
   min-height: 100vh;
   background: #080b12;
-  color: white;
+  color: #ffffff;
+
   display: flex;
   flex-direction: column;
+
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
-/* Header */
+
+/* =========================
+   HEADER
+========================= */
 
 .room-header {
-  height: 64px;
+  height: 70px;
   padding: 0 24px;
+
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid #202633;
-  background: #0d111a;
+
+  background: rgba(10, 14, 23, 0.98);
+
+  border-bottom: 1px solid
+    rgba(148, 163, 184, 0.12);
+
+  box-shadow:
+    0 8px 30px rgba(0, 0, 0, 0.2);
+
+  z-index: 20;
 }
+
+
+/* Logo */
 
 .room-logo {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 20px;
-  font-weight: 700;
+  gap: 11px;
 }
 
 .room-logo-icon {
-  width: 32px;
-  height: 32px;
+  width: 38px;
+  height: 38px;
+
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #6366f1;
-  border-radius: 8px;
+
+  border-radius: 10px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #6366f1,
+      #3b82f6
+    );
+
+  font-size: 18px;
   font-weight: 800;
+
+  box-shadow:
+    0 5px 18px
+    rgba(79, 70, 229, 0.35);
 }
 
-.room-info {
+.room-logo-text {
   display: flex;
-  gap: 8px;
-  align-items: center;
-  color: #9ca3af;
+  flex-direction: column;
+  gap: 1px;
 }
 
-.room-info strong {
-  color: white;
+.brand-name {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.brand-subtitle {
+  color: #64748b;
+  font-size: 10px;
+  letter-spacing: 0.4px;
+}
+
+
+/* Room Info */
+
+.room-center-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  padding: 7px 13px;
+
+  background: #111827;
+
+  border:
+    1px solid
+    rgba(148, 163, 184, 0.12);
+
+  border-radius: 9px;
+}
+
+.room-label {
+  color: #64748b;
+
+  font-size: 9px;
+  font-weight: 700;
+
+  letter-spacing: 1px;
+}
+
+.room-id {
+  color: #e2e8f0;
+
+  font-size: 12px;
+  font-weight: 600;
+
+  font-family: monospace;
+}
+
+
+/* Header Actions */
+
+.room-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .online-users {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: #d1d5db;
+  gap: 7px;
+
+  padding: 7px 11px;
+
+  border:
+    1px solid
+    rgba(34, 197, 94, 0.18);
+
+  background:
+    rgba(34, 197, 94, 0.07);
+
+  border-radius: 20px;
+
+  color: #bbf7d0;
+
+  font-size: 12px;
 }
 
 .online-dot {
-  width: 9px;
-  height: 9px;
+  width: 7px;
+  height: 7px;
+
   background: #22c55e;
+
   border-radius: 50%;
+
+  box-shadow:
+    0 0 8px
+    rgba(34, 197, 94, 0.7);
 }
 
-/* Workspace */
+.share-btn {
+  padding: 8px 13px;
+
+  border:
+    1px solid
+    rgba(99, 102, 241, 0.3);
+
+  border-radius: 7px;
+
+  background: rgba(99, 102, 241, 0.1);
+
+  color: #a5b4fc;
+
+  font-size: 11px;
+  font-weight: 600;
+
+  cursor: pointer;
+
+  transition: 0.2s ease;
+}
+
+.share-btn:hover {
+  background: rgba(99, 102, 241, 0.18);
+
+  border-color:
+    rgba(99, 102, 241, 0.5);
+
+  transform: translateY(-1px);
+}
+
+
+/* =========================
+   WORKSPACE
+========================= */
 
 .workspace {
   flex: 1;
+
   display: grid;
+
   grid-template-columns: 1fr 1fr;
-  min-height: calc(100vh - 64px);
+
+  min-height:
+    calc(100vh - 70px);
 }
 
-/* Panels */
+
+/* =========================
+   PANELS
+========================= */
 
 .whiteboard-panel,
 .code-panel {
   min-width: 0;
+
   display: flex;
   flex-direction: column;
+
+  overflow: hidden;
 }
 
 .whiteboard-panel {
-  border-right: 1px solid #202633;
+  border-right:
+    1px solid
+    rgba(148, 163, 184, 0.12);
 }
+
+
+/* =========================
+   PANEL HEADER
+========================= */
 
 .panel-header {
-  height: 45px;
+  height: 54px;
+
   display: flex;
   align-items: center;
-  padding: 0 18px;
-  background: #111722;
-  border-bottom: 1px solid #202633;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: #9ca3af;
+  justify-content: space-between;
+
+  padding: 0 17px;
+
+  background: #0f141f;
+
+  border-bottom:
+    1px solid
+    rgba(148, 163, 184, 0.1);
 }
 
-/* Whiteboard */
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel-icon {
+  width: 28px;
+  height: 28px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 7px;
+
+  background:
+    rgba(99, 102, 241, 0.12);
+
+  color: #818cf8;
+
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.code-icon {
+  color: #60a5fa;
+}
+
+.panel-title > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.panel-name {
+  color: #e2e8f0;
+
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.panel-description {
+  color: #64748b;
+
+  font-size: 9px;
+}
+
+.live-badge {
+  padding: 4px 7px;
+
+  background:
+    rgba(34, 197, 94, 0.08);
+
+  border:
+    1px solid
+    rgba(34, 197, 94, 0.18);
+
+  border-radius: 5px;
+
+  color: #86efac;
+
+  font-size: 8px;
+  font-weight: 700;
+
+  letter-spacing: 0.8px;
+}
+
+.language-badge {
+  padding: 4px 8px;
+
+  background: #111827;
+
+  border:
+    1px solid
+    #1f2937;
+
+  border-radius: 5px;
+
+  color: #64748b;
+
+  font-size: 9px;
+}
+
+
+/* =========================
+   DRAWING TOOLBAR
+========================= */
+
+.drawing-toolbar {
+  height: 52px;
+
+  display: flex;
+  align-items: center;
+
+  gap: 7px;
+
+  padding: 8px 12px;
+
+  background: #f8fafc;
+
+  border-bottom:
+    1px solid
+    #cbd5e1;
+}
+
+.tool-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  padding: 7px 11px;
+
+  border:
+    1px solid
+    #d1d5db;
+
+  border-radius: 7px;
+
+  background: #ffffff;
+
+  color: #475569;
+
+  font-size: 11px;
+  font-weight: 500;
+
+  cursor: pointer;
+
+  transition:
+    background 0.2s ease,
+    border 0.2s ease,
+    transform 0.2s ease;
+}
+
+.tool-button:hover {
+  background: #f1f5f9;
+
+  border-color: #94a3b8;
+
+  transform: translateY(-1px);
+}
+
+.tool-icon {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.tool-active {
+  background: #e0e7ff;
+
+  color: #3730a3;
+
+  border-color: #818cf8;
+
+  box-shadow:
+    0 2px 8px
+    rgba(99, 102, 241, 0.16);
+}
+
+
+/* =========================
+   WHITEBOARD
+========================= */
 
 .whiteboard-area {
   flex: 1;
-  background: #f8fafc;
-  color: #1f2937;
+
+  position: relative;
+
+  overflow: auto;
+
+  background:
+    linear-gradient(
+      rgba(100, 116, 139, 0.11) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      rgba(100, 116, 139, 0.11) 1px,
+      transparent 1px
+    ),
+    #e2e8f0;
+
+  background-size: 25px 25px;
+
+  padding: 18px;
+}
+
+
+/* Canvas label */
+
+.canvas-label {
+  position: absolute;
+
+  top: 12px;
+  right: 14px;
+
+  z-index: 5;
+
+  display: flex;
+  align-items: center;
+  gap: 5px;
+
+  padding: 5px 8px;
+
+  background:
+    rgba(255, 255, 255, 0.82);
+
+  border:
+    1px solid
+    rgba(148, 163, 184, 0.35);
+
+  border-radius: 6px;
+
+  color: #64748b;
+
+  font-size: 9px;
+  font-weight: 600;
+
+  backdrop-filter: blur(6px);
+}
+
+.canvas-status {
+  width: 5px;
+  height: 5px;
+
+  background: #22c55e;
+
+  border-radius: 50%;
+}
+
+
+/* Konva */
+
+.whiteboard-area canvas {
+  display: block;
+
+  cursor: crosshair;
+
+  background: transparent;
+}
+
+
+/* =========================
+   TEXT INPUT
+========================= */
+
+.text-input-box {
+  position: absolute;
+
+  z-index: 10;
+
   display: flex;
   flex-direction: column;
+
+  gap: 8px;
+
+  padding: 10px;
+
+  background: white;
+
+  border:
+    1px solid
+    #cbd5e1;
+
+  border-radius: 8px;
+
+  box-shadow:
+    0 10px 30px
+    rgba(15, 23, 42, 0.2);
+}
+
+.text-input-box input {
+  width: 180px;
+
+  padding: 8px 10px;
+
+  border:
+    1px solid
+    #cbd5e1;
+
+  border-radius: 5px;
+
+  outline: none;
+
+  color: #111827;
+
+  background: white;
+
+  font-size: 13px;
+}
+
+.text-input-box input:focus {
+  border-color: #6366f1;
+
+  box-shadow:
+    0 0 0 2px
+    rgba(99, 102, 241, 0.12);
+}
+
+.text-input-actions {
+  display: flex;
+
+  gap: 6px;
+}
+
+.text-input-actions button {
+  padding: 6px 10px;
+
+  border: none;
+
+  border-radius: 5px;
+
+  background: #6366f1;
+
+  color: white;
+
+  font-size: 11px;
+
+  cursor: pointer;
+}
+
+.text-input-actions button:hover {
+  opacity: 0.9;
+}
+
+.text-input-actions button:last-child {
+  background: #64748b;
+}
+
+
+/* =========================
+   EDITOR TABS
+========================= */
+
+.editor-tabs {
+  height: 38px;
+
+  display: flex;
+  align-items: stretch;
+
+  background: #0b0f17;
+
+  border-bottom:
+    1px solid
+    #1f2937;
+}
+
+.editor-tab {
+  display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 7px;
+
+  padding: 0 14px;
+
+  color: #64748b;
+
+  font-size: 10px;
+
+  border-right:
+    1px solid
+    #1f2937;
 }
 
-.whiteboard-area p {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 8px;
+.active-tab {
+  background: #111827;
+
+  color: #cbd5e1;
+
+  border-top:
+    2px solid
+    #6366f1;
 }
 
-.whiteboard-area span {
-  color: #6b7280;
+.js-dot {
+  width: 6px;
+  height: 6px;
+
+  background: #facc15;
+
+  border-radius: 50%;
 }
 
-/* Code Editor */
+
+/* =========================
+   CODE AREA
+========================= */
 
 .code-area {
   flex: 1;
-  background: #0b0f17;
-  padding: 25px;
+
   position: relative;
+
+  overflow: auto;
+
+  background: #0b0f17;
+
+  padding: 22px 0 45px;
+}
+
+.code-content {
+  display: flex;
+
+  min-width: max-content;
+
+  padding: 0 20px;
+}
+
+.line-numbers {
+  min-width: 28px;
+
+  margin-right: 18px;
+
+  color: #374151;
+
+  font-family:
+    "Courier New",
+    monospace;
+
+  font-size: 13px;
+
+  line-height: 1.8;
+
+  text-align: right;
+
+  user-select: none;
 }
 
 .code-area pre {
   margin: 0;
-  color: #d1d5db;
-  font-family: "Courier New", monospace;
-  font-size: 15px;
-  line-height: 1.7;
+
+  color: #cbd5e1;
+
+  font-family:
+    "Courier New",
+    monospace;
+
+  font-size: 13px;
+
+  line-height: 1.8;
 }
 
-.editor-note {
+
+/* Editor Footer */
+
+.editor-footer {
   position: absolute;
-  bottom: 20px;
-  left: 25px;
-  color: #6b7280;
-  font-size: 12px;
+
+  bottom: 0;
+  left: 0;
+  right: 0;
+
+  height: 28px;
+
+  display: flex;
+  align-items: center;
+
+  justify-content: flex-end;
+
+  gap: 15px;
+
+  padding: 0 15px;
+
+  background: #111827;
+
+  border-top:
+    1px solid
+    #1f2937;
+
+  color: #64748b;
+
+  font-size: 9px;
 }
 
-/* Responsive */
 
-@media (max-width: 800px) {
+/* =========================
+   SCROLLBARS
+========================= */
+
+.whiteboard-area::-webkit-scrollbar,
+.code-area::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.whiteboard-area::-webkit-scrollbar-track,
+.code-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.whiteboard-area::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+
+  border-radius: 10px;
+}
+
+.code-area::-webkit-scrollbar-thumb {
+  background: #374151;
+
+  border-radius: 10px;
+}
+
+
+/* =========================
+   RESPONSIVE
+========================= */
+
+@media (max-width: 900px) {
+
   .workspace {
     grid-template-columns: 1fr;
   }
 
   .whiteboard-panel {
     border-right: none;
-    border-bottom: 1px solid #202633;
-    min-height: 50vh;
+
+    border-bottom:
+      1px solid
+      rgba(148, 163, 184, 0.12);
+
+    min-height: 60vh;
   }
 
   .code-panel {
-    min-height: 50vh;
+    min-height: 60vh;
   }
+
+  .room-center-info {
+    display: none;
+  }
+}
+
+
+@media (max-width: 600px) {
 
   .room-header {
-    padding: 0 15px;
+    padding: 0 12px;
   }
 
-  .room-info {
+  .brand-subtitle {
     display: none;
+  }
+
+  .brand-name {
+    font-size: 16px;
+  }
+
+  .room-logo-icon {
+    width: 34px;
+    height: 34px;
+  }
+
+  .share-btn {
+    display: none;
+  }
+
+  .drawing-toolbar {
+    overflow-x: auto;
+  }
+
+  .tool-button {
+    white-space: nowrap;
   }
 }
