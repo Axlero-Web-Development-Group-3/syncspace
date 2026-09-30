@@ -1,3 +1,4 @@
+
 import './Room.css'
 import { Stage, Layer, Line, Rect, Text } from 'react-konva'
 import { useState, useRef, useEffect } from 'react'
@@ -12,45 +13,147 @@ function Room({ roomId }) {
   const [textInput, setTextInput] = useState('')
   const [textPosition, setTextPosition] = useState(null)
 
+  const [leftPanelWidth, setLeftPanelWidth] = useState(50)
+
   const isDrawing = useRef(false)
   const startPoint = useRef(null)
+  const isResizing = useRef(false)
 
-  // Join room and listen for drawings
+  // =========================
+  // SOCKET CONNECTION
+  // =========================
+
   useEffect(() => {
-    socket.emit('joinRoom', roomId)
+    const joinRoom = () => {
+      console.log('Socket connected:', socket.id)
 
-    // Receive pen drawing from another user
+      socket.emit('joinRoom', roomId)
+
+      console.log('Joined room:', roomId)
+    }
+
     const handleRemoteLine = (line) => {
+      console.log('Received remote line:', line)
+
       setLines((prev) => [...prev, line])
     }
 
-    // Receive rectangle from another user
     const handleRemoteRectangle = (rectangle) => {
+      console.log('Received remote rectangle:', rectangle)
+
       setRectangles((prev) => [...prev, rectangle])
     }
 
-    // Receive text from another user
     const handleRemoteText = (text) => {
+      console.log('Received remote text:', text)
+
       setTexts((prev) => [...prev, text])
     }
 
+    socket.on('connect', joinRoom)
+
     socket.on('drawLine', handleRemoteLine)
+
     socket.on('drawRectangle', handleRemoteRectangle)
+
     socket.on('drawText', handleRemoteText)
 
+    if (socket.connected) {
+      joinRoom()
+    } else {
+      socket.connect()
+    }
+
     return () => {
+      socket.off('connect', joinRoom)
+
       socket.off('drawLine', handleRemoteLine)
+
       socket.off('drawRectangle', handleRemoteRectangle)
+
       socket.off('drawText', handleRemoteText)
     }
   }, [roomId])
 
-  // Mouse Down
+  // =========================
+  // RESIZABLE DIVIDER
+  // =========================
+
+  const handleResizeStart = () => {
+    isResizing.current = true
+
+    document.body.style.cursor = 'col-resize'
+
+    document.body.style.userSelect = 'none'
+  }
+
+  const handleResizeMove = (e) => {
+    if (!isResizing.current) {
+      return
+    }
+
+    const workspace = document.querySelector('.workspace')
+
+    if (!workspace) {
+      return
+    }
+
+    const rect = workspace.getBoundingClientRect()
+
+    const newWidth =
+      ((e.clientX - rect.left) / rect.width) * 100
+
+    if (newWidth >= 30 && newWidth <= 70) {
+      setLeftPanelWidth(newWidth)
+    }
+  }
+
+  const handleResizeEnd = () => {
+    isResizing.current = false
+
+    document.body.style.cursor = 'default'
+
+    document.body.style.userSelect = 'auto'
+  }
+
+  useEffect(() => {
+    document.addEventListener(
+      'mousemove',
+      handleResizeMove
+    )
+
+    document.addEventListener(
+      'mouseup',
+      handleResizeEnd
+    )
+
+    return () => {
+      document.removeEventListener(
+        'mousemove',
+        handleResizeMove
+      )
+
+      document.removeEventListener(
+        'mouseup',
+        handleResizeEnd
+      )
+    }
+  }, [])
+
+  // =========================
+  // MOUSE DOWN
+  // =========================
+
   const handleMouseDown = (e) => {
     const stage = e.target.getStage()
+
     const pos = stage.getPointerPosition()
 
-    // Text tool
+    if (!pos) {
+      return
+    }
+
+    // TEXT TOOL
     if (tool === 'text') {
       setTextPosition({
         x: pos.x,
@@ -58,10 +161,10 @@ function Room({ roomId }) {
       })
 
       setTextInput('')
+
       return
     }
 
-    // Start drawing
     isDrawing.current = true
 
     startPoint.current = {
@@ -69,7 +172,7 @@ function Room({ roomId }) {
       y: pos.y,
     }
 
-    // Start pen line
+    // PEN
     if (tool === 'pen') {
       setLines((prev) => [
         ...prev,
@@ -77,7 +180,7 @@ function Room({ roomId }) {
       ])
     }
 
-    // Start rectangle
+    // RECTANGLE
     if (tool === 'rectangle') {
       setRectangles((prev) => [
         ...prev,
@@ -91,17 +194,29 @@ function Room({ roomId }) {
     }
   }
 
-  // Mouse Move
+  // =========================
+  // MOUSE MOVE
+  // =========================
+
   const handleMouseMove = (e) => {
-    if (!isDrawing.current) return
+    if (!isDrawing.current) {
+      return
+    }
 
     const stage = e.target.getStage()
+
     const point = stage.getPointerPosition()
 
-    // Pen
+    if (!point) {
+      return
+    }
+
+    // PEN
     if (tool === 'pen') {
       setLines((prev) => {
-        if (prev.length === 0) return prev
+        if (prev.length === 0) {
+          return prev
+        }
 
         const lastLine = prev[prev.length - 1]
 
@@ -118,14 +233,18 @@ function Room({ roomId }) {
       })
     }
 
-    // Rectangle
+    // RECTANGLE
     if (tool === 'rectangle') {
       const start = startPoint.current
 
-      if (!start) return
+      if (!start) {
+        return
+      }
 
       setRectangles((prev) => {
-        if (prev.length === 0) return prev
+        if (prev.length === 0) {
+          return prev
+        }
 
         const lastRectangle =
           prev[prev.length - 1]
@@ -144,11 +263,16 @@ function Room({ roomId }) {
     }
   }
 
-  // Mouse Up
-  const handleMouseUp = () => {
-    if (!isDrawing.current) return
+  // =========================
+  // MOUSE UP
+  // =========================
 
-    // Send pen drawing
+  const handleMouseUp = () => {
+    if (!isDrawing.current) {
+      return
+    }
+
+    // SEND PEN DRAWING
     if (tool === 'pen') {
       setLines((currentLines) => {
         if (currentLines.length === 0) {
@@ -159,15 +283,17 @@ function Room({ roomId }) {
           currentLines[currentLines.length - 1]
 
         socket.emit('drawLine', {
-          roomId,
+          roomId: roomId,
           line: lastLine,
         })
+
+        console.log('Sent line:', lastLine)
 
         return currentLines
       })
     }
 
-    // Send rectangle
+    // SEND RECTANGLE
     if (tool === 'rectangle') {
       setRectangles((currentRectangles) => {
         if (currentRectangles.length === 0) {
@@ -175,24 +301,41 @@ function Room({ roomId }) {
         }
 
         const lastRectangle =
-          currentRectangles[currentRectangles.length - 1]
+          currentRectangles[
+            currentRectangles.length - 1
+          ]
 
         socket.emit('drawRectangle', {
-          roomId,
+          roomId: roomId,
           rectangle: lastRectangle,
         })
+
+        console.log(
+          'Sent rectangle:',
+          lastRectangle
+        )
 
         return currentRectangles
       })
     }
 
     isDrawing.current = false
+
     startPoint.current = null
   }
 
-  // Add Text
+  // =========================
+  // ADD TEXT
+  // =========================
+
   const handleAddText = () => {
-    if (!textInput.trim() || !textPosition) return
+    if (!textInput.trim()) {
+      return
+    }
+
+    if (!textPosition) {
+      return
+    }
 
     const newText = {
       x: textPosition.x,
@@ -200,32 +343,42 @@ function Room({ roomId }) {
       text: textInput,
     }
 
-    // Show text on current user's screen
     setTexts((prev) => [
       ...prev,
       newText,
     ])
 
-    // Send text to other users
     socket.emit('drawText', {
-      roomId,
+      roomId: roomId,
       text: newText,
     })
 
+    console.log('Sent text:', newText)
+
     setTextInput('')
+
     setTextPosition(null)
   }
 
-  // Cancel Text
+  // =========================
+  // CANCEL TEXT
+  // =========================
+
   const handleCancelText = () => {
     setTextInput('')
+
     setTextPosition(null)
   }
+
+  // =========================
+  // UI
+  // =========================
 
   return (
     <div className="room-page">
 
       {/* HEADER */}
+
       <header className="room-header">
 
         <div className="room-logo">
@@ -281,10 +434,19 @@ function Room({ roomId }) {
       </header>
 
       {/* WORKSPACE */}
+
       <main className="workspace">
 
-        {/* WHITEBOARD */}
-        <section className="whiteboard-panel">
+        {/* =========================
+            WHITEBOARD
+        ========================= */}
+
+        <section
+          className="whiteboard-panel"
+          style={{
+            width: `${leftPanelWidth}%`,
+          }}
+        >
 
           <div className="panel-header">
 
@@ -315,15 +477,17 @@ function Room({ roomId }) {
           </div>
 
           {/* TOOLBAR */}
+
           <div className="drawing-toolbar">
 
-            {/* PEN */}
             <button
-              className={`tool-button ${
-                tool === 'pen'
-                  ? 'tool-active'
-                  : ''
-              }`}
+              className={
+                `tool-button ${
+                  tool === 'pen'
+                    ? 'tool-active'
+                    : ''
+                }`
+              }
               onClick={() => setTool('pen')}
             >
 
@@ -337,13 +501,14 @@ function Room({ roomId }) {
 
             </button>
 
-            {/* RECTANGLE */}
             <button
-              className={`tool-button ${
-                tool === 'rectangle'
-                  ? 'tool-active'
-                  : ''
-              }`}
+              className={
+                `tool-button ${
+                  tool === 'rectangle'
+                    ? 'tool-active'
+                    : ''
+                }`
+              }
               onClick={() =>
                 setTool('rectangle')
               }
@@ -359,13 +524,14 @@ function Room({ roomId }) {
 
             </button>
 
-            {/* TEXT */}
             <button
-              className={`tool-button ${
-                tool === 'text'
-                  ? 'tool-active'
-                  : ''
-              }`}
+              className={
+                `tool-button ${
+                  tool === 'text'
+                    ? 'tool-active'
+                    : ''
+                }`
+              }
               onClick={() => setTool('text')}
             >
 
@@ -381,7 +547,8 @@ function Room({ roomId }) {
 
           </div>
 
-          {/* WHITEBOARD AREA */}
+          {/* CANVAS */}
+
           <div className="whiteboard-area">
 
             <div className="canvas-label">
@@ -403,7 +570,8 @@ function Room({ roomId }) {
 
               <Layer>
 
-                {/* PEN LINES */}
+                {/* LINES */}
+
                 {lines.map((line, index) => (
                   <Line
                     key={`line-${index}`}
@@ -416,10 +584,13 @@ function Room({ roomId }) {
                 ))}
 
                 {/* RECTANGLES */}
+
                 {rectangles.map(
                   (rectangle, index) => (
                     <Rect
-                      key={`rectangle-${index}`}
+                      key={
+                        `rectangle-${index}`
+                      }
                       x={rectangle.x}
                       y={rectangle.y}
                       width={rectangle.width}
@@ -432,6 +603,7 @@ function Room({ roomId }) {
                 )}
 
                 {/* TEXT */}
+
                 {texts.map((item, index) => (
                   <Text
                     key={`text-${index}`}
@@ -449,7 +621,9 @@ function Room({ roomId }) {
             </Stage>
 
             {/* TEXT INPUT */}
+
             {textPosition && (
+
               <div
                 className="text-input-box"
                 style={{
@@ -464,7 +638,9 @@ function Room({ roomId }) {
                   placeholder="Enter text..."
                   value={textInput}
                   onChange={(e) =>
-                    setTextInput(e.target.value)
+                    setTextInput(
+                      e.target.value
+                    )
                   }
                   onKeyDown={(e) => {
 
@@ -496,14 +672,39 @@ function Room({ roomId }) {
                 </div>
 
               </div>
+
             )}
 
           </div>
 
         </section>
 
-        {/* CODE EDITOR */}
-        <section className="code-panel">
+        {/* =========================
+            RESIZE DIVIDER
+        ========================= */}
+
+        <div
+          className="resize-divider"
+          onMouseDown={handleResizeStart}
+        >
+
+          <div className="resize-handle">
+            ⋮
+          </div>
+
+        </div>
+
+        {/* =========================
+            CODE EDITOR
+        ========================= */}
+
+        <section
+          className="code-panel"
+          style={{
+            width:
+              `calc(${100 - leftPanelWidth}% - 8px)`,
+          }}
+        >
 
           <div className="panel-header">
 
@@ -534,6 +735,7 @@ function Room({ roomId }) {
           </div>
 
           {/* EDITOR TABS */}
+
           <div className="editor-tabs">
 
             <div className="editor-tab active-tab">
@@ -551,6 +753,7 @@ function Room({ roomId }) {
           </div>
 
           {/* CODE AREA */}
+
           <div className="code-area">
 
             <div className="code-content">
@@ -606,4 +809,4 @@ function Room({ roomId }) {
   )
 }
 
-export default Room
+

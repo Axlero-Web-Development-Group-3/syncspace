@@ -6,7 +6,6 @@ body {
   margin: 0;
 }
 
-
 /* =========================
    ROOM PAGE
 ========================= */
@@ -28,7 +27,6 @@ body {
     sans-serif;
 }
 
-
 /* =========================
    HEADER
 ========================= */
@@ -43,15 +41,12 @@ body {
 
   background: rgba(10, 14, 23, 0.98);
 
-  border-bottom: 1px solid
-    rgba(148, 163, 184, 0.12);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
 
-  box-shadow:
-    0 8px 30px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
 
   z-index: 20;
 }
-
 
 /* Logo */
 
@@ -71,19 +66,17 @@ body {
 
   border-radius: 10px;
 
-  background:
-    linear-gradient(
-      135deg,
-      #6366f1,
-      #3b82f6
-    );
+  background: linear-gradient(
+    135deg,
+    #6366f1,
+    #3b82f6
+  );
 
   font-size: 18px;
   font-weight: 800;
 
   box-shadow:
-    0 5px 18px
-    rgba(79, 70, 229, 0.35);
+    0 5px 18px rgba(79, 70, 229, 0.35);
 }
 
 .room-logo-text {
@@ -103,7 +96,6 @@ body {
   letter-spacing: 0.4px;
 }
 
-
 /* Room Info */
 
 .room-center-info {
@@ -115,9 +107,7 @@ body {
 
   background: #111827;
 
-  border:
-    1px solid
-    rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.12);
 
   border-radius: 9px;
 }
@@ -140,7 +130,6 @@ body {
   font-family: monospace;
 }
 
-
 /* Header Actions */
 
 .room-actions {
@@ -156,12 +145,9 @@ body {
 
   padding: 7px 11px;
 
-  border:
-    1px solid
-    rgba(34, 197, 94, 0.18);
+  border: 1px solid rgba(34, 197, 94, 0.18);
 
-  background:
-    rgba(34, 197, 94, 0.07);
+  background: rgba(34, 197, 94, 0.07);
 
   border-radius: 20px;
 
@@ -179,16 +165,13 @@ body {
   border-radius: 50%;
 
   box-shadow:
-    0 0 8px
-    rgba(34, 197, 94, 0.7);
+    0 0 8px rgba(34, 197, 94, 0.7);
 }
 
 .share-btn {
   padding: 8px 13px;
 
-  border:
-    1px solid
-    rgba(99, 102, 241, 0.3);
+  border: 1px solid rgba(99, 102, 241, 0.3);
 
   border-radius: 7px;
 
@@ -207,12 +190,10 @@ body {
 .share-btn:hover {
   background: rgba(99, 102, 241, 0.18);
 
-  border-color:
-    rgba(99, 102, 241, 0.5);
+  border-color: rgba(99, 102, 241, 0.5);
 
   transform: translateY(-1px);
 }
-
 
 /* =========================
    WORKSPACE
@@ -221,14 +202,14 @@ body {
 .workspace {
   flex: 1;
 
-  display: grid;
+  display: flex;
 
-  grid-template-columns: 1fr 1fr;
+  width: 100%;
 
-  min-height:
-    calc(100vh - 70px);
+  min-height: calc(100vh - 70px);
+
+  overflow: hidden;
 }
-
 
 /* =========================
    PANELS
@@ -238,18 +219,69 @@ body {
 .code-panel {
   min-width: 0;
 
+  height: 100%;
+
   display: flex;
   flex-direction: column;
 
   overflow: hidden;
+
+  flex-shrink: 0;
 }
 
 .whiteboard-panel {
-  border-right:
-    1px solid
-    rgba(148, 163, 184, 0.12);
+  border-right: none;
 }
 
+/* =========================
+   RESIZABLE DIVIDER
+========================= */
+
+.resize-divider {
+  width: 8px;
+  height: 100%;
+
+  flex-shrink: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: #111827;
+
+  border-left: 1px solid #263044;
+  border-right: 1px solid #263044;
+
+  cursor: col-resize;
+
+  z-index: 10;
+
+  user-select: none;
+}
+
+.resize-divider:hover {
+  background: #1e293b;
+}
+
+.resize-handle {
+  width: 4px;
+  height: 42px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  color: #64748b;
+
+  font-size: 18px;
+  line-height: 1;
+
+  user-select: none;
+}
+
+.resize-divider:hover .resize-handle {
+  color: #818cf8;
+}
 
 /* =========================
    PANEL HEADER
@@ -269,6 +301,8 @@ body {
   border-bottom:
     1px solid
     rgba(148, 163, 184, 0.1);
+
+  flex-shrink: 0;
 }
 
 .panel-title {
@@ -355,7 +389,6 @@ body {
   font-size: 9px;
 }
 
-
 /* =========================
    DRAWING TOOLBAR
 ========================= */
@@ -375,6 +408,8 @@ body {
   border-bottom:
     1px solid
     #cbd5e1;
+
+  flex-shrink: 0;
 }
 
 .tool-button {
@@ -430,7 +465,6 @@ body {
     rgba(99, 102, 241, 0.16);
 }
 
-
 /* =========================
    WHITEBOARD
 ========================= */
@@ -458,9 +492,6 @@ body {
 
   padding: 18px;
 }
-
-
-/* Canvas label */
 
 .canvas-label {
   position: absolute;
@@ -502,8 +533,7 @@ body {
   border-radius: 50%;
 }
 
-
-/* Konva */
+/* Konva Canvas */
 
 .whiteboard-area canvas {
   display: block;
@@ -512,7 +542,6 @@ body {
 
   background: transparent;
 }
-
 
 /* =========================
    TEXT INPUT
@@ -601,7 +630,6 @@ body {
   background: #64748b;
 }
 
-
 /* =========================
    EDITOR TABS
 ========================= */
@@ -617,6 +645,8 @@ body {
   border-bottom:
     1px solid
     #1f2937;
+
+  flex-shrink: 0;
 }
 
 .editor-tab {
@@ -653,7 +683,6 @@ body {
 
   border-radius: 50%;
 }
-
 
 /* =========================
    CODE AREA
@@ -713,7 +742,6 @@ body {
   line-height: 1.8;
 }
 
-
 /* Editor Footer */
 
 .editor-footer {
@@ -745,7 +773,6 @@ body {
   font-size: 9px;
 }
 
-
 /* =========================
    SCROLLBARS
 ========================= */
@@ -773,7 +800,6 @@ body {
   border-radius: 10px;
 }
 
-
 /* =========================
    RESPONSIVE
 ========================= */
@@ -781,7 +807,28 @@ body {
 @media (max-width: 900px) {
 
   .workspace {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+
+    overflow: auto;
+  }
+
+  .whiteboard-panel,
+  .code-panel {
+    width: 100% !important;
+
+    min-height: 60vh;
+  }
+
+  .resize-divider {
+    width: 100%;
+    height: 8px;
+
+    cursor: row-resize;
+  }
+
+  .resize-handle {
+    width: 42px;
+    height: 4px;
   }
 
   .whiteboard-panel {
@@ -790,19 +837,12 @@ body {
     border-bottom:
       1px solid
       rgba(148, 163, 184, 0.12);
-
-    min-height: 60vh;
-  }
-
-  .code-panel {
-    min-height: 60vh;
   }
 
   .room-center-info {
     display: none;
   }
 }
-
 
 @media (max-width: 600px) {
 
