@@ -1,3 +1,4 @@
+
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -8,7 +9,7 @@ const app = express();
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL,
+    origin: "http://localhost:5174",
   })
 );
 
@@ -18,10 +19,11 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL,
+    origin: "http://localhost:5174",
   },
 });
 
+// Health check
 app.get("/api/health", (req, res) => {
   res.json({
     success: true,
@@ -29,6 +31,7 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// Socket.io
 io.on("connection", (socket) => {
   console.log("client connected:", socket.id);
 
@@ -37,6 +40,11 @@ io.on("connection", (socket) => {
     socket.join(roomId);
 
     console.log(`${socket.id} joined room: ${roomId}`);
+
+    const userCount =
+      io.sockets.adapter.rooms.get(roomId)?.size || 0;
+
+    io.to(roomId).emit("roomUsers", userCount);
   });
 
   // Pen drawing
@@ -48,14 +56,28 @@ io.on("connection", (socket) => {
   socket.on("drawRectangle", ({ roomId, rectangle }) => {
     socket.to(roomId).emit("drawRectangle", rectangle);
   });
+
   // Text drawing
-socket.on("drawText", ({ roomId, text }) => {
-  socket.to(roomId).emit("drawText", text);
-});
+  socket.on("drawText", ({ roomId, text }) => {
+    socket.to(roomId).emit("drawText", text);
+  });
 
   // Disconnect
-  socket.on("disconnect", () => {
-    console.log("client disconnected:", socket.id);
+  socket.on("disconnecting", () => {
+    const rooms = [...socket.rooms].filter(
+      (room) => room !== socket.id
+    );
+
+    rooms.forEach((roomId) => {
+      setTimeout(() => {
+        const userCount =
+          io.sockets.adapter.rooms.get(roomId)?.size || 0;
+
+        io.to(roomId).emit("roomUsers", userCount);
+      }, 0);
+    });
+
+    console.log("client disconnecting:", socket.id);
   });
 });
 
@@ -64,3 +86,4 @@ const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+

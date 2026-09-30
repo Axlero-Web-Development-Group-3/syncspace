@@ -13,16 +13,14 @@ function Room({ roomId }) {
   const [textInput, setTextInput] = useState('')
   const [textPosition, setTextPosition] = useState(null)
 
+  const [onlineUsers, setOnlineUsers] = useState(1)
   const [leftPanelWidth, setLeftPanelWidth] = useState(50)
 
   const isDrawing = useRef(false)
   const startPoint = useRef(null)
   const isResizing = useRef(false)
 
-  // =========================
-  // SOCKET CONNECTION
-  // =========================
-
+  // Socket.io room connection
   useEffect(() => {
     const joinRoom = () => {
       console.log('Socket connected:', socket.id)
@@ -50,6 +48,13 @@ function Room({ roomId }) {
       setTexts((prev) => [...prev, text])
     }
 
+    // Real-time online users count
+    const handleRoomUsers = (count) => {
+      console.log('Online users:', count)
+
+      setOnlineUsers(count)
+    }
+
     socket.on('connect', joinRoom)
 
     socket.on('drawLine', handleRemoteLine)
@@ -57,6 +62,8 @@ function Room({ roomId }) {
     socket.on('drawRectangle', handleRemoteRectangle)
 
     socket.on('drawText', handleRemoteText)
+
+    socket.on('roomUsers', handleRoomUsers)
 
     if (socket.connected) {
       joinRoom()
@@ -72,13 +79,12 @@ function Room({ roomId }) {
       socket.off('drawRectangle', handleRemoteRectangle)
 
       socket.off('drawText', handleRemoteText)
+
+      socket.off('roomUsers', handleRoomUsers)
     }
   }, [roomId])
 
-  // =========================
-  // RESIZABLE DIVIDER
-  // =========================
-
+  // Resize divider
   const handleResizeStart = () => {
     isResizing.current = true
 
@@ -88,15 +94,11 @@ function Room({ roomId }) {
   }
 
   const handleResizeMove = (e) => {
-    if (!isResizing.current) {
-      return
-    }
+    if (!isResizing.current) return
 
     const workspace = document.querySelector('.workspace')
 
-    if (!workspace) {
-      return
-    }
+    if (!workspace) return
 
     const rect = workspace.getBoundingClientRect()
 
@@ -117,43 +119,26 @@ function Room({ roomId }) {
   }
 
   useEffect(() => {
-    document.addEventListener(
-      'mousemove',
-      handleResizeMove
-    )
+    document.addEventListener('mousemove', handleResizeMove)
 
-    document.addEventListener(
-      'mouseup',
-      handleResizeEnd
-    )
+    document.addEventListener('mouseup', handleResizeEnd)
 
     return () => {
-      document.removeEventListener(
-        'mousemove',
-        handleResizeMove
-      )
+      document.removeEventListener('mousemove', handleResizeMove)
 
-      document.removeEventListener(
-        'mouseup',
-        handleResizeEnd
-      )
+      document.removeEventListener('mouseup', handleResizeEnd)
     }
   }, [])
 
-  // =========================
-  // MOUSE DOWN
-  // =========================
-
+  // Whiteboard mouse down
   const handleMouseDown = (e) => {
     const stage = e.target.getStage()
 
     const pos = stage.getPointerPosition()
 
-    if (!pos) {
-      return
-    }
+    if (!pos) return
 
-    // TEXT TOOL
+    // Text tool
     if (tool === 'text') {
       setTextPosition({
         x: pos.x,
@@ -172,7 +157,7 @@ function Room({ roomId }) {
       y: pos.y,
     }
 
-    // PEN
+    // Pen
     if (tool === 'pen') {
       setLines((prev) => [
         ...prev,
@@ -180,7 +165,7 @@ function Room({ roomId }) {
       ])
     }
 
-    // RECTANGLE
+    // Rectangle
     if (tool === 'rectangle') {
       setRectangles((prev) => [
         ...prev,
@@ -194,29 +179,20 @@ function Room({ roomId }) {
     }
   }
 
-  // =========================
-  // MOUSE MOVE
-  // =========================
-
+  // Whiteboard mouse move
   const handleMouseMove = (e) => {
-    if (!isDrawing.current) {
-      return
-    }
+    if (!isDrawing.current) return
 
     const stage = e.target.getStage()
 
     const point = stage.getPointerPosition()
 
-    if (!point) {
-      return
-    }
+    if (!point) return
 
-    // PEN
+    // Pen drawing
     if (tool === 'pen') {
       setLines((prev) => {
-        if (prev.length === 0) {
-          return prev
-        }
+        if (prev.length === 0) return prev
 
         const lastLine = prev[prev.length - 1]
 
@@ -233,25 +209,23 @@ function Room({ roomId }) {
       })
     }
 
-    // RECTANGLE
+    // Rectangle drawing
     if (tool === 'rectangle') {
       const start = startPoint.current
 
-      if (!start) {
-        return
-      }
+      if (!start) return
 
       setRectangles((prev) => {
-        if (prev.length === 0) {
-          return prev
-        }
+        if (prev.length === 0) return prev
 
         const lastRectangle =
           prev[prev.length - 1]
 
         const updatedRectangle = {
           ...lastRectangle,
+
           width: point.x - start.x,
+
           height: point.y - start.y,
         }
 
@@ -263,16 +237,11 @@ function Room({ roomId }) {
     }
   }
 
-  // =========================
-  // MOUSE UP
-  // =========================
-
+  // Whiteboard mouse up
   const handleMouseUp = () => {
-    if (!isDrawing.current) {
-      return
-    }
+    if (!isDrawing.current) return
 
-    // SEND PEN DRAWING
+    // Send pen drawing
     if (tool === 'pen') {
       setLines((currentLines) => {
         if (currentLines.length === 0) {
@@ -293,7 +262,7 @@ function Room({ roomId }) {
       })
     }
 
-    // SEND RECTANGLE
+    // Send rectangle
     if (tool === 'rectangle') {
       setRectangles((currentRectangles) => {
         if (currentRectangles.length === 0) {
@@ -324,18 +293,11 @@ function Room({ roomId }) {
     startPoint.current = null
   }
 
-  // =========================
-  // ADD TEXT
-  // =========================
-
+  // Add text
   const handleAddText = () => {
-    if (!textInput.trim()) {
-      return
-    }
+    if (!textInput.trim()) return
 
-    if (!textPosition) {
-      return
-    }
+    if (!textPosition) return
 
     const newText = {
       x: textPosition.x,
@@ -360,88 +322,55 @@ function Room({ roomId }) {
     setTextPosition(null)
   }
 
-  // =========================
-  // CANCEL TEXT
-  // =========================
-
+  // Cancel text
   const handleCancelText = () => {
     setTextInput('')
 
     setTextPosition(null)
   }
 
-  // =========================
-  // UI
-  // =========================
-
   return (
     <div className="room-page">
 
-      {/* HEADER */}
-
+      {/* Room Header */}
       <header className="room-header">
 
         <div className="room-logo">
-
-          <span className="room-logo-icon">
+          <span className="logo-icon">
             S
           </span>
 
-          <div className="room-logo-text">
-
-            <span className="brand-name">
-              SyncSpace
-            </span>
-
-            <span className="brand-subtitle">
-              Collaborative Workspace
-            </span>
-
-          </div>
-
+          <span>
+            SyncSpace
+          </span>
         </div>
 
-        <div className="room-center-info">
-
-          <span className="room-label">
-            ROOM
-          </span>
+        <div className="room-info">
 
           <span className="room-id">
             {roomId}
           </span>
 
-        </div>
-
-        <div className="room-actions">
-
-          <div className="online-users">
-
+          <span className="online-status">
             <span className="online-dot"></span>
 
-            <span>
-              2 online
-            </span>
-
-          </div>
-
-          <button className="share-btn">
-            Share Room
-          </button>
+            {onlineUsers} online
+          </span>
 
         </div>
+
+        <button className="share-room-btn">
+          Share Room
+        </button>
 
       </header>
 
-      {/* WORKSPACE */}
 
-      <main className="workspace">
+      {/* Main Workspace */}
+      <div className="workspace">
 
-        {/* =========================
-            WHITEBOARD
-        ========================= */}
-
-        <section
+        {/* Whiteboard */}
+        <div
           className="whiteboard-panel"
           style={{
             width: `${leftPanelWidth}%`,
@@ -450,114 +379,57 @@ function Room({ roomId }) {
 
           <div className="panel-header">
 
-            <div className="panel-title">
+            <h3>
+              WHITEBOARD
+            </h3>
 
-              <span className="panel-icon">
-                ✦
-              </span>
+            <div className="tools">
 
-              <div>
-
-                <span className="panel-name">
-                  Whiteboard
-                </span>
-
-                <span className="panel-description">
-                  Visual collaboration
-                </span>
-
-              </div>
-
-            </div>
-
-            <span className="live-badge">
-              LIVE
-            </span>
-
-          </div>
-
-          {/* TOOLBAR */}
-
-          <div className="drawing-toolbar">
-
-            <button
-              className={
-                `tool-button ${
+              <button
+                className={
                   tool === 'pen'
-                    ? 'tool-active'
-                    : ''
-                }`
-              }
-              onClick={() => setTool('pen')}
-            >
-
-              <span className="tool-icon">
-                ✎
-              </span>
-
-              <span>
+                    ? 'tool-btn active'
+                    : 'tool-btn'
+                }
+                onClick={() =>
+                  setTool('pen')
+                }
+              >
                 Pen
-              </span>
+              </button>
 
-            </button>
-
-            <button
-              className={
-                `tool-button ${
+              <button
+                className={
                   tool === 'rectangle'
-                    ? 'tool-active'
-                    : ''
-                }`
-              }
-              onClick={() =>
-                setTool('rectangle')
-              }
-            >
-
-              <span className="tool-icon">
-                □
-              </span>
-
-              <span>
+                    ? 'tool-btn active'
+                    : 'tool-btn'
+                }
+                onClick={() =>
+                  setTool('rectangle')
+                }
+              >
                 Rectangle
-              </span>
+              </button>
 
-            </button>
-
-            <button
-              className={
-                `tool-button ${
+              <button
+                className={
                   tool === 'text'
-                    ? 'tool-active'
-                    : ''
-                }`
-              }
-              onClick={() => setTool('text')}
-            >
-
-              <span className="tool-icon">
-                T
-              </span>
-
-              <span>
+                    ? 'tool-btn active'
+                    : 'tool-btn'
+                }
+                onClick={() =>
+                  setTool('text')
+                }
+              >
                 Text
-              </span>
+              </button>
 
-            </button>
+            </div>
 
           </div>
 
-          {/* CANVAS */}
 
-          <div className="whiteboard-area">
-
-            <div className="canvas-label">
-
-              <span className="canvas-status"></span>
-
-              Drawing Canvas
-
-            </div>
+          <div className="canvas-container">
 
             <Stage
               width={900}
@@ -565,67 +437,71 @@ function Room({ roomId }) {
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
             >
 
               <Layer>
 
-                {/* LINES */}
-
-                {lines.map((line, index) => (
-                  <Line
-                    key={`line-${index}`}
-                    points={line}
-                    stroke="#4f46e5"
-                    strokeWidth={4}
-                    lineCap="round"
-                    lineJoin="round"
-                  />
-                ))}
-
-                {/* RECTANGLES */}
-
-                {rectangles.map(
-                  (rectangle, index) => (
-                    <Rect
-                      key={
-                        `rectangle-${index}`
-                      }
-                      x={rectangle.x}
-                      y={rectangle.y}
-                      width={rectangle.width}
-                      height={rectangle.height}
-                      stroke="#6366f1"
+                {/* Pen Lines */}
+                {lines.map(
+                  (line, index) => (
+                    <Line
+                      key={`line-${index}`}
+                      points={line}
+                      stroke="#ffffff"
                       strokeWidth={3}
-                      fill="rgba(99, 102, 241, 0.06)"
+                      lineCap="round"
+                      lineJoin="round"
                     />
                   )
                 )}
 
-                {/* TEXT */}
 
-                {texts.map((item, index) => (
-                  <Text
-                    key={`text-${index}`}
-                    x={item.x}
-                    y={item.y}
-                    text={item.text}
-                    fontSize={20}
-                    fontStyle="bold"
-                    fill="#1e293b"
-                  />
-                ))}
+                {/* Rectangles */}
+                {rectangles.map(
+                  (
+                    rectangle,
+                    index
+                  ) => (
+                    <Rect
+                      key={`rect-${index}`}
+                      x={rectangle.x}
+                      y={rectangle.y}
+                      width={
+                        rectangle.width
+                      }
+                      height={
+                        rectangle.height
+                      }
+                      stroke="#6d8cff"
+                      strokeWidth={2}
+                    />
+                  )
+                )}
+
+
+                {/* Text */}
+                {texts.map(
+                  (text, index) => (
+                    <Text
+                      key={`text-${index}`}
+                      x={text.x}
+                      y={text.y}
+                      text={text.text}
+                      fill="#ffffff"
+                      fontSize={20}
+                    />
+                  )
+                )}
 
               </Layer>
 
             </Stage>
 
-            {/* TEXT INPUT */}
 
+            {/* Text Input */}
             {textPosition && (
-
               <div
-                className="text-input-box"
+                className="text-input-overlay"
                 style={{
                   left: textPosition.x,
                   top: textPosition.y,
@@ -633,9 +509,7 @@ function Room({ roomId }) {
               >
 
                 <input
-                  type="text"
                   autoFocus
-                  placeholder="Enter text..."
                   value={textInput}
                   onChange={(e) =>
                     setTextInput(
@@ -643,28 +517,35 @@ function Room({ roomId }) {
                     )
                   }
                   onKeyDown={(e) => {
-
-                    if (e.key === 'Enter') {
+                    if (
+                      e.key === 'Enter'
+                    ) {
                       handleAddText()
                     }
 
-                    if (e.key === 'Escape') {
+                    if (
+                      e.key === 'Escape'
+                    ) {
                       handleCancelText()
                     }
-
                   }}
+                  placeholder="Type text..."
                 />
 
-                <div className="text-input-actions">
+                <div className="text-actions">
 
                   <button
-                    onClick={handleAddText}
+                    onClick={
+                      handleAddText
+                    }
                   >
                     Add
                   </button>
 
                   <button
-                    onClick={handleCancelText}
+                    onClick={
+                      handleCancelText
+                    }
                   >
                     Cancel
                   </button>
@@ -672,141 +553,87 @@ function Room({ roomId }) {
                 </div>
 
               </div>
-
             )}
 
           </div>
 
-        </section>
+        </div>
 
-        {/* =========================
-            RESIZE DIVIDER
-        ========================= */}
 
+        {/* Resizable Divider */}
         <div
           className="resize-divider"
-          onMouseDown={handleResizeStart}
+          onMouseDown={
+            handleResizeStart
+          }
         >
-
           <div className="resize-handle">
             ⋮
           </div>
-
         </div>
 
-        {/* =========================
-            CODE EDITOR
-        ========================= */}
 
-        <section
+        {/* Code Editor */}
+        <div
           className="code-panel"
           style={{
-            width:
-              `calc(${100 - leftPanelWidth}% - 8px)`,
+            width: `${100 - leftPanelWidth}%`,
           }}
         >
 
           <div className="panel-header">
 
-            <div className="panel-title">
-
-              <span className="panel-icon code-icon">
-                &lt;/&gt;
-              </span>
-
-              <div>
-
-                <span className="panel-name">
-                  Code Editor
-                </span>
-
-                <span className="panel-description">
-                  Shared workspace
-                </span>
-
-              </div>
-
-            </div>
-
-            <span className="language-badge">
-              JavaScript
-            </span>
+            <h3>
+              CODE EDITOR
+            </h3>
 
           </div>
 
-          {/* EDITOR TABS */}
+          <div className="code-editor">
 
-          <div className="editor-tabs">
-
-            <div className="editor-tab active-tab">
-
-              <span className="js-dot"></span>
-
-              index.js
-
-            </div>
-
-            <div className="editor-tab">
-              + New
-            </div>
-
-          </div>
-
-          {/* CODE AREA */}
-
-          <div className="code-area">
-
-            <div className="code-content">
-
-              <div className="line-numbers">
-                1<br />
-                2<br />
-                3<br />
-                4<br />
-                5<br />
-                6<br />
-                7<br />
-                8<br />
-                9
-              </div>
-
-              <pre>
-{`function createRoom(user) {
-  const room = {
-    owner: user,
-    active: true
-  };
-
-  return room;
-}`}
-              </pre>
-
-            </div>
-
-            <div className="editor-footer">
-
-              <span>
-                JavaScript
+            <div className="code-line">
+              <span className="line-number">
+                1
               </span>
 
               <span>
-                UTF-8
+                <span className="keyword">
+                  function
+                </span>{' '}
+                createRoom(user) {'{'}
+              </span>
+            </div>
+
+            <div className="code-line">
+              <span className="line-number">
+                2
               </span>
 
               <span>
-                ● Ready
+                {'  '}return
+                {' '}room.create(user)
+              </span>
+            </div>
+
+            <div className="code-line">
+              <span className="line-number">
+                3
               </span>
 
+              <span>
+                {'}'}
+              </span>
             </div>
 
           </div>
 
-        </section>
+        </div>
 
-      </main>
+      </div>
 
     </div>
   )
 }
 
+export default Room
 

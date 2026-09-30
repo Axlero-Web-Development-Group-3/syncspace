@@ -67,9 +67,18 @@ function App() {
               <button
   className="join-confirm-btn"
   onClick={() => {
-    socket.emit("joinRoom", roomId)
-    setShowRoom(true)
-  }}
+  if (!roomId.trim()) {
+    alert("Please enter a Room ID")
+    return
+  }
+
+  const cleanRoomId = roomId.trim()
+
+  socket.emit("joinRoom", cleanRoomId)
+  setRoomId(cleanRoomId)
+  setShowJoin(false)
+  setShowRoom(true)
+}}
 >
   Join Room
 </button>
