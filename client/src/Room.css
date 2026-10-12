@@ -875,3 +875,82 @@ body {
     white-space: nowrap;
   }
 }
+
+/* Online users */
+.online-users-list {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.online-user-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid #30384a;
+  border-radius: 14px;
+  font-size: 12px;
+  color: #e5e7eb;
+}
+
+.online-user-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #34d399;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* Monaco collaborative editor */
+.code-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.monaco-editor-container {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.editor-language {
+  margin-left: auto;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+/* Monaco editor typing and layout fix */
+.code-panel {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.monaco-editor-container {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 200px;
+  width: 100%;
+  overflow: hidden;
+}
+
+.monaco-editor-container .monaco-editor,
+.monaco-editor-container .monaco-editor * {
+  pointer-events: auto;
+}
+
+.monaco-editor-container .overflow-guard {
+  pointer-events: auto;
+}
+

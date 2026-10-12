@@ -1,6 +1,7 @@
 
 import './Room.css'
 import { Stage, Layer, Line, Rect, Text, Circle } from 'react-konva'
+import Editor from '@monaco-editor/react'
 import { useState, useRef, useEffect } from 'react'
 import { socket } from './lib/socket'
 
@@ -13,29 +14,36 @@ function Room({ roomId }) {
   const [textInput, setTextInput] = useState('')
   const [textPosition, setTextPosition] = useState(null)
 
-  // Store the actual list of online users
   const [onlineUsers, setOnlineUsers] = useState([])
-
-  const [userName] = useState(
-    `User-${Math.floor(Math.random() * 1000)}`
-  )
-
-  const [userColor] = useState(
-    `hsl(${Math.floor(Math.random() * 360)}, 80%, 60%)`
-  )
-
   const [remoteCursors, setRemoteCursors] = useState({})
   const [leftPanelWidth, setLeftPanelWidth] = useState(50)
 
+  const [code, setCode] = useState('// Start coding together...\n')
+
+  const [userName] = useState(
+    () => `User-${Math.floor(Math.random() * 1000)}`
+  )
+
+  const [userColor] = useState(
+    () => `hsl(${Math.floor(Math.random() * 360)}, 80%, 60%)`
+  )
+
+  const editorRef = useRef(null)
   const isDrawing = useRef(false)
   const startPoint = useRef(null)
   const isResizing = useRef(false)
   const lastCursorSend = useRef(0)
+  const codeRef = useRef(code)
+  const applyingRemoteCode = useRef(false)
 
+  // Keep the latest code available to event handlers.
+  useEffect(() => {
+    codeRef.current = code
+  }, [code])
+
+  // Connect to room and listen for updates.
   useEffect(() => {
     const joinRoom = () => {
-      console.log('Socket connected:', socket.id)
-
       setLines([])
       setRectangles([])
       setTexts([])
@@ -52,46 +60,76 @@ function Room({ roomId }) {
     }
 
     const handleCanvasState = (drawings) => {
-      setLines(drawings.lines || [])
-      setRectangles(drawings.rectangles || [])
-      setTexts(drawings.texts || [])
-
-      console.log('Previous drawings loaded:', drawings)
+      setLines(drawings?.lines || [])
+      setRectangles(drawings?.rectangles || [])
+      setTexts(drawings?.texts || [])
     }
 
     const handleRemoteLine = (line) => {
-      setLines((prev) => [...prev, line])
+      setLines((previous) => [...previous, line])
     }
 
     const handleRemoteRectangle = (rectangle) => {
-      setRectangles((prev) => [...prev, rectangle])
+      setRectangles((previous) => [...previous, rectangle])
     }
 
     const handleRemoteText = (text) => {
-      setTexts((prev) => [...prev, text])
+      setTexts((previous) => [...previous, text])
     }
 
-    // Backend sends an array of users, not a number
     const handleRoomUsers = (users) => {
       setOnlineUsers(Array.isArray(users) ? users : [])
-      console.log('Online users:', users)
     }
 
     const handleRemoteCursor = (cursor) => {
-      if (!cursor.socketId || cursor.socketId === socket.id) return
+      if (!cursor?.socketId || cursor.socketId === socket.id) return
 
-      setRemoteCursors((prev) => ({
-        ...prev,
+      setRemoteCursors((previous) => ({
+        ...previous,
         [cursor.socketId]: cursor,
       }))
     }
 
     const handleUserLeft = (socketId) => {
-      setRemoteCursors((prev) => {
-        const updated = { ...prev }
+      setRemoteCursors((previous) => {
+        const updated = { ...previous }
         delete updated[socketId]
         return updated
       })
+    }
+
+    // Receive the current room code from the server.
+    const handleCodeState = (initialCode) => {
+      const nextCode =
+        typeof initialCode === 'string' ? initialCode : ''
+
+      applyingRemoteCode.current = true
+      codeRef.current = nextCode
+      setCode(nextCode)
+
+      if (editorRef.current) {
+        editorRef.current.setValue(nextCode)
+      }
+
+      applyingRemoteCode.current = false
+    }
+
+    // Receive code changes from another user.
+    const handleCodeUpdate = (updatedCode) => {
+      if (typeof updatedCode !== 'string') return
+
+      applyingRemoteCode.current = true
+      codeRef.current = updatedCode
+      setCode(updatedCode)
+
+      if (
+        editorRef.current &&
+        editorRef.current.getValue() !== updatedCode
+      ) {
+        editorRef.current.setValue(updatedCode)
+      }
+
+      applyingRemoteCode.current = false
     }
 
     socket.on('connect', joinRoom)
@@ -102,6 +140,9 @@ function Room({ roomId }) {
     socket.on('roomUsers', handleRoomUsers)
     socket.on('cursorMove', handleRemoteCursor)
     socket.on('userLeft', handleUserLeft)
+
+    socket.on('codeTextState', handleCodeState)
+    socket.on('codeTextUpdate', handleCodeUpdate)
 
     if (socket.connected) {
       joinRoom()
@@ -118,23 +159,66 @@ function Room({ roomId }) {
       socket.off('roomUsers', handleRoomUsers)
       socket.off('cursorMove', handleRemoteCursor)
       socket.off('userLeft', handleUserLeft)
+
+      socket.off('codeTextState', handleCodeState)
+      socket.off('codeTextUpdate', handleCodeUpdate)
     }
   }, [roomId, userName, userColor])
 
-  const handleResizeStart = () => {
+  // Monaco editor mount.
+  const handleEditorMount = (editor) => {
+    editorRef.current = editor
+
+    editor.updateOptions({
+      readOnly: false,
+      domReadOnly: false,
+    })
+
+    // Keep the editor's initial value in sync with component state.
+    if (editor.getValue() !== codeRef.current) {
+      editor.setValue(codeRef.current)
+    }
+
+    console.log('Monaco editor mounted and ready for typing')
+  }
+
+  // Send code changes to the server.
+  const handleCodeChange = (value) => {
+    const updatedCode = value ?? ''
+
+    codeRef.current = updatedCode
+    setCode(updatedCode)
+
+    // Do not rebroadcast a change applied from another user.
+    if (applyingRemoteCode.current) return
+
+    if (socket.connected) {
+      socket.emit('codeTextUpdate', {
+        roomId,
+        code: updatedCode,
+      })
+    }
+  }
+
+  // Resize panels.
+  const handleResizeStart = (event) => {
+    event.preventDefault()
     isResizing.current = true
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
   }
 
-  const handleResizeMove = (e) => {
+  const handleResizeMove = (event) => {
     if (!isResizing.current) return
 
     const workspace = document.querySelector('.workspace')
     if (!workspace) return
 
-    const rect = workspace.getBoundingClientRect()
-    const newWidth = ((e.clientX - rect.left) / rect.width) * 100
+    const bounds = workspace.getBoundingClientRect()
+    if (!bounds.width) return
+
+    const newWidth =
+      ((event.clientX - bounds.left) / bounds.width) * 100
 
     if (newWidth >= 30 && newWidth <= 70) {
       setLeftPanelWidth(newWidth)
@@ -143,8 +227,8 @@ function Room({ roomId }) {
 
   const handleResizeEnd = () => {
     isResizing.current = false
-    document.body.style.cursor = 'default'
-    document.body.style.userSelect = 'auto'
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
   }
 
   useEffect(() => {
@@ -154,36 +238,43 @@ function Room({ roomId }) {
     return () => {
       document.removeEventListener('mousemove', handleResizeMove)
       document.removeEventListener('mouseup', handleResizeEnd)
-      document.body.style.cursor = 'default'
-      document.body.style.userSelect = 'auto'
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
     }
   }, [])
 
-  const handleMouseDown = (e) => {
-    const stage = e.target.getStage()
-    const pos = stage.getPointerPosition()
+  // Start drawing.
+  const handleMouseDown = (event) => {
+    const stage = event.target.getStage()
+    const position = stage.getPointerPosition()
 
-    if (!pos) return
+    if (!position) return
 
     if (tool === 'text') {
-      setTextPosition({ x: pos.x, y: pos.y })
+      setTextPosition({ x: position.x, y: position.y })
       setTextInput('')
       return
     }
 
     isDrawing.current = true
-    startPoint.current = { x: pos.x, y: pos.y }
+    startPoint.current = {
+      x: position.x,
+      y: position.y,
+    }
 
     if (tool === 'pen') {
-      setLines((prev) => [...prev, [pos.x, pos.y]])
+      setLines((previous) => [
+        ...previous,
+        [position.x, position.y],
+      ])
     }
 
     if (tool === 'rectangle') {
-      setRectangles((prev) => [
-        ...prev,
+      setRectangles((previous) => [
+        ...previous,
         {
-          x: pos.x,
-          y: pos.y,
+          x: position.x,
+          y: position.y,
           width: 0,
           height: 0,
         },
@@ -191,13 +282,13 @@ function Room({ roomId }) {
     }
   }
 
-  const handleMouseMove = (e) => {
-    const stage = e.target.getStage()
+  // Draw and broadcast cursor movement.
+  const handleMouseMove = (event) => {
+    const stage = event.target.getStage()
     const point = stage.getPointerPosition()
 
     if (!point) return
 
-    // Send cursor positions at most once every 50 ms
     const now = Date.now()
 
     if (now - lastCursorSend.current >= 50) {
@@ -215,13 +306,13 @@ function Room({ roomId }) {
     if (!isDrawing.current) return
 
     if (tool === 'pen') {
-      setLines((prev) => {
-        if (prev.length === 0) return prev
+      setLines((previous) => {
+        if (!previous.length) return previous
 
-        const lastLine = prev[prev.length - 1]
+        const lastLine = previous[previous.length - 1]
 
         return [
-          ...prev.slice(0, -1),
+          ...previous.slice(0, -1),
           [...lastLine, point.x, point.y],
         ]
       })
@@ -231,13 +322,13 @@ function Room({ roomId }) {
       const start = startPoint.current
       if (!start) return
 
-      setRectangles((prev) => {
-        if (prev.length === 0) return prev
+      setRectangles((previous) => {
+        if (!previous.length) return previous
 
-        const lastRectangle = prev[prev.length - 1]
+        const lastRectangle = previous[previous.length - 1]
 
         return [
-          ...prev.slice(0, -1),
+          ...previous.slice(0, -1),
           {
             ...lastRectangle,
             width: point.x - start.x,
@@ -248,18 +339,17 @@ function Room({ roomId }) {
     }
   }
 
+  // Broadcast completed drawings.
   const handleMouseUp = () => {
     if (!isDrawing.current) return
 
     if (tool === 'pen') {
       setLines((currentLines) => {
-        if (currentLines.length === 0) return currentLines
-
-        const lastLine = currentLines[currentLines.length - 1]
+        if (!currentLines.length) return currentLines
 
         socket.emit('drawLine', {
           roomId,
-          line: lastLine,
+          line: currentLines[currentLines.length - 1],
         })
 
         return currentLines
@@ -268,16 +358,11 @@ function Room({ roomId }) {
 
     if (tool === 'rectangle') {
       setRectangles((currentRectangles) => {
-        if (currentRectangles.length === 0) {
-          return currentRectangles
-        }
-
-        const lastRectangle =
-          currentRectangles[currentRectangles.length - 1]
+        if (!currentRectangles.length) return currentRectangles
 
         socket.emit('drawRectangle', {
           roomId,
-          rectangle: lastRectangle,
+          rectangle: currentRectangles[currentRectangles.length - 1],
         })
 
         return currentRectangles
@@ -288,6 +373,7 @@ function Room({ roomId }) {
     startPoint.current = null
   }
 
+  // Add whiteboard text.
   const handleAddText = () => {
     if (!textInput.trim() || !textPosition) return
 
@@ -297,7 +383,7 @@ function Room({ roomId }) {
       text: textInput,
     }
 
-    setTexts((prev) => [...prev, newText])
+    setTexts((previous) => [...previous, newText])
 
     socket.emit('drawText', {
       roomId,
@@ -313,6 +399,15 @@ function Room({ roomId }) {
     setTextPosition(null)
   }
 
+  const handleShareRoom = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+      window.alert('Room link copied!')
+    } catch {
+      window.prompt('Copy this room link:', window.location.href)
+    }
+  }
+
   return (
     <div className="room-page">
       <header className="room-header">
@@ -325,50 +420,28 @@ function Room({ roomId }) {
           <span className="room-id">{roomId}</span>
 
           <span className="online-status">
-            <span className="online-dot"></span>
+            <span className="online-dot" />
             {onlineUsers.length} online
           </span>
 
-          <div
-            className="online-users-list"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              flexWrap: 'wrap',
-            }}
-          >
+          <div className="online-users-list">
             {onlineUsers.map((user) => (
               <span
                 key={user.id}
                 title={user.userName}
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  padding: '4px 8px',
-                  border: '1px solid #30384a',
-                  borderRadius: '14px',
-                  fontSize: '12px',
-                  color: '#e5e7eb',
-                }}
+                className="online-user-chip"
               >
-                <span
-                  style={{
-                    width: '7px',
-                    height: '7px',
-                    borderRadius: '50%',
-                    background: '#34d399',
-                    display: 'inline-block',
-                  }}
-                />
+                <span className="online-user-dot" />
                 {user.userName}
               </span>
             ))}
           </div>
         </div>
 
-        <button className="share-room-btn">
+        <button
+          className="share-room-btn"
+          onClick={handleShareRoom}
+        >
           Share Room
         </button>
       </header>
@@ -391,9 +464,7 @@ function Room({ roomId }) {
 
               <button
                 className={
-                  tool === 'rectangle'
-                    ? 'tool-btn active'
-                    : 'tool-btn'
+                  tool === 'rectangle' ? 'tool-btn active' : 'tool-btn'
                 }
                 onClick={() => setTool('rectangle')}
               >
@@ -473,10 +544,10 @@ function Room({ roomId }) {
                 <input
                   autoFocus
                   value={textInput}
-                  onChange={(e) => setTextInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleAddText()
-                    if (e.key === 'Escape') handleCancelText()
+                  onChange={(event) => setTextInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') handleAddText()
+                    if (event.key === 'Escape') handleCancelText()
                   }}
                   placeholder="Type text..."
                 />
@@ -503,26 +574,30 @@ function Room({ roomId }) {
         >
           <div className="panel-header">
             <h3>CODE EDITOR</h3>
+            <span className="editor-language">JavaScript</span>
           </div>
 
-          <div className="code-editor">
-            <div className="code-line">
-              <span className="line-number">1</span>
-              <span>
-                <span className="keyword">function</span>
-                {' '}createRoom(user) {'{'}
-              </span>
-            </div>
-
-            <div className="code-line">
-              <span className="line-number">2</span>
-              <span>{'  '}return room.create(user)</span>
-            </div>
-
-            <div className="code-line">
-              <span className="line-number">3</span>
-              <span>{'}'}</span>
-            </div>
+          <div className="monaco-editor-container">
+            <Editor
+              key={roomId}
+              height="100%"
+              language="javascript"
+              theme="vs-dark"
+              value={code}
+              onMount={handleEditorMount}
+              onChange={handleCodeChange}
+              options={{
+                readOnly: false,
+                domReadOnly: false,
+                automaticLayout: true,
+                minimap: { enabled: false },
+                fontSize: 14,
+                tabSize: 2,
+                wordWrap: 'on',
+                scrollBeyondLastLine: false,
+                padding: { top: 12 },
+              }}
+            />
           </div>
         </div>
       </div>
