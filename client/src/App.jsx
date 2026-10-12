@@ -1,102 +1,228 @@
+import { useEffect, useState } from 'react'
 import './App.css'
+import Room from './Room'
+import { socket } from './lib/socket'
 
 function App() {
+  const [showRoom, setShowRoom] = useState(false)
+  const [showJoin, setShowJoin] = useState(false)
+  const [roomId, setRoomId] = useState('')
+
+  useEffect(() => {
+    socket.connect()
+
+    const handleConnect = () => {
+      console.log("Socket connected:", socket.id)
+      console.log("Socket object:", socket)
+    }
+
+    const handleDisconnect = () => {
+      console.log("Socket disconnected")
+    }
+
+    socket.on("connect", handleConnect)
+    socket.on("disconnect", handleDisconnect)
+
+    return () => {
+      socket.off("connect", handleConnect)
+      socket.off("disconnect", handleDisconnect)
+      socket.disconnect()
+    }
+  }, [])
+
+  if (showRoom) {
+  return <Room roomId={roomId} />
+}
+
   return (
     <div className="app">
 
-      <header className="navbar">
-        <div className="logo">
-          <span className="logo-icon">S</span>
-          <span>SyncSpace</span>
-        </div>
+      {/* Join Room Popup */}
+      {showJoin && (
+        <div className="join-overlay">
 
-        <nav className="nav-links">
-          <a href="#home">Home</a>
-          <a href="#features">Features</a>
-          <a href="#about">About</a>
-        </nav>
+          <div className="join-box">
 
-        <div className="nav-actions">
-          <button className="login-btn">Login</button>
-          <button className="signup-btn">Get Started</button>
-        </div>
-      </header>
+            <h2>Join a Room</h2>
 
-      <main id="home">
-
-        <section className="hero-section">
-
-          <div className="hero-content">
-
-            <div className="badge">
-              <span className="status-dot"></span>
-              Real-time collaboration
-            </div>
-
-            <h1>
-              Collaborate.
-              <br />
-              <span>Code. Create.</span>
-              <br />
-              Together.
-            </h1>
-
-            <p className="hero-description">
-              A real-time workspace where developers can collaborate,
-              visualize ideas, and write code together — all in one place.
+            <p>
+              Enter the room ID to join a collaboration room.
             </p>
 
-            <div className="hero-buttons">
-              <button className="primary-btn">
-                Create a Room →
+            <input
+  type="text"
+  placeholder="Enter Room ID"
+  value={roomId}
+  onChange={(e) => setRoomId(e.target.value)}
+/>
+
+            <div className="join-actions">
+
+              <button
+                className="cancel-btn"
+                onClick={() => setShowJoin(false)}
+              >
+                Cancel
               </button>
 
-              <button className="secondary-btn">
-                Join a Room
-              </button>
+              <button
+  className="join-confirm-btn"
+  onClick={() => {
+  if (!roomId.trim()) {
+    alert("Please enter a Room ID")
+    return
+  }
+
+  const cleanRoomId = roomId.trim()
+
+  socket.emit("joinRoom", cleanRoomId)
+  setRoomId(cleanRoomId)
+  setShowJoin(false)
+  setShowRoom(true)
+}}
+>
+  Join Room
+</button>
+
             </div>
-
-            <p className="hero-note">
-              No complicated setup. Just create a room and start collaborating.
-            </p>
 
           </div>
 
+        </div>
+      )}
+
+      {/* Navbar */}
+      <header className="navbar">
+
+        <div className="logo">
+
+          <span className="logo-icon">
+            S
+          </span>
+
+          <span>
+            SyncSpace
+          </span>
+
+        </div>
+
+        <nav className="nav-links">
+
+          <a href="#home">
+            Home
+          </a>
+
+          <a href="#features">
+            Features
+          </a>
+
+          <a href="#about">
+            About
+          </a>
+
+        </nav>
+
+        <div className="nav-actions">
+
+          <button className="login-btn">
+            Login
+          </button>
+
+          <button
+            className="get-started-btn"
+            onClick={() => {
+              const newRoomId = `room-${Math.random().toString(36).substring(2, 8)}`
+              setRoomId(newRoomId)
+              socket.emit("joinRoom", newRoomId)
+              setShowRoom(true)
+            }}
+          >
+            Get Started
+          </button>
+
+        </div>
+
+      </header>
+
+      {/* Hero Section */}
+      <main>
+
+        <section
+          id="home"
+          className="hero-section"
+        >
+
+          <div className="hero-content">
+
+            <p className="hero-tag">
+              REAL-TIME COLLABORATION
+            </p>
+
+            <h1>
+              Collaborate. Code.
+              <br />
+              Create. Together.
+            </h1>
+
+            <p className="hero-description">
+              A real-time workspace where developers can
+              collaborate, visualize ideas, and write code
+              together — all in one place.
+            </p>
+
+            <div className="hero-buttons">
+
+              <button
+                className="primary-btn"
+                onClick={() => {
+                  const newRoomId = `room-${Math.random().toString(36).substring(2, 8)}`
+                  setRoomId(newRoomId)
+                  socket.emit("joinRoom", newRoomId)
+                  setShowRoom(true)
+                }}
+              >
+                Create a Room →
+              </button>
+
+              <button
+                className="secondary-btn"
+                onClick={() => setShowJoin(true)}
+              >
+                Join a Room
+              </button>
+
+            </div>
+
+          </div>
+
+          {/* Workspace Preview */}
           <div className="workspace-preview">
 
             <div className="preview-header">
 
-              <div className="window-dots">
-                <span></span>
-                <span></span>
-                <span></span>
+              <div className="preview-room">
+                SyncSpace / room-42
               </div>
 
-              <span className="room-name">
-                SyncSpace / room-42
-              </span>
-
-              <div className="online-users">
-                <span className="user-avatar">S</span>
-                <span className="user-avatar second">A</span>
-                <span className="online-text">
-                  2 online
-                </span>
+              <div className="preview-online">
+                <span className="online-dot"></span>
+                2 online
               </div>
 
             </div>
 
-            <div className="preview-body">
+            <div className="preview-content">
 
-              <div className="whiteboard-preview">
+              {/* Whiteboard */}
+              <div className="preview-whiteboard">
 
-                <span className="preview-label">
+                <div className="preview-title">
                   WHITEBOARD
-                </span>
+                </div>
 
-                <div className="diagram">
+                <div className="whiteboard-content">
 
-                  <div className="diagram-box frontend">
+                  <div className="architecture-box">
                     React
                   </div>
 
@@ -104,7 +230,7 @@ function App() {
                     ↓
                   </div>
 
-                  <div className="diagram-box backend">
+                  <div className="architecture-box">
                     Node.js
                   </div>
 
@@ -112,7 +238,7 @@ function App() {
                     ↓
                   </div>
 
-                  <div className="diagram-box database">
+                  <div className="architecture-box">
                     MongoDB
                   </div>
 
@@ -120,13 +246,16 @@ function App() {
 
               </div>
 
-              <div className="code-preview">
+              {/* Code Editor */}
+              <div className="preview-editor">
 
-                <span className="preview-label">
+                <div className="preview-title">
                   CODE EDITOR
-                </span>
+                </div>
 
-                <pre>
+                <div className="code-content">
+
+                  <pre>
 {`function createRoom(user) {
   const room = {
     owner: user,
@@ -135,10 +264,12 @@ function App() {
 
   return room;
 }`}
-                </pre>
+                  </pre>
 
-                <div className="cursor-label">
-                  Shivani
+                  <div className="cursor-label">
+                    Shivani
+                  </div>
+
                 </div>
 
               </div>
@@ -149,7 +280,11 @@ function App() {
 
         </section>
 
-        <section id="features" className="features-section">
+        {/* Features Section */}
+        <section
+          id="features"
+          className="features-section"
+        >
 
           <div className="section-heading">
 
@@ -171,7 +306,10 @@ function App() {
           <div className="feature-grid">
 
             <div className="feature-card">
-              <div className="feature-icon">✦</div>
+
+              <div className="feature-icon">
+                ✦
+              </div>
 
               <h3>
                 Real-time Collaboration
@@ -181,10 +319,14 @@ function App() {
                 Work together with multiple users and see
                 changes instantly without refreshing the page.
               </p>
+
             </div>
 
             <div className="feature-card">
-              <div className="feature-icon">⌘</div>
+
+              <div className="feature-icon">
+                ⌘
+              </div>
 
               <h3>
                 Collaborative Whiteboard
@@ -194,9 +336,11 @@ function App() {
                 Draw system architectures, diagrams,
                 flows, and ideas on a shared digital canvas.
               </p>
+
             </div>
 
             <div className="feature-card">
+
               <div className="feature-icon">
                 &lt;/&gt;
               </div>
@@ -209,10 +353,14 @@ function App() {
                 Write and edit code together using a
                 powerful developer focused editor.
               </p>
+
             </div>
 
             <div className="feature-card">
-              <div className="feature-icon">◉</div>
+
+              <div className="feature-icon">
+                ◉
+              </div>
 
               <h3>
                 Private Rooms
@@ -222,15 +370,21 @@ function App() {
                 Create dedicated rooms and invite teammates,
                 interviewers, or collaborators.
               </p>
+
             </div>
 
           </div>
 
         </section>
 
-        <section id="about" className="about-section">
+        {/* About Section */}
+        <section
+          id="about"
+          className="about-section"
+        >
 
           <div>
+
             <p className="section-tag">
               BUILT FOR COLLABORATION
             </p>
@@ -238,6 +392,7 @@ function App() {
             <h2>
               One workspace. Multiple possibilities.
             </h2>
+
           </div>
 
           <p>
@@ -252,11 +407,19 @@ function App() {
 
       </main>
 
+      {/* Footer */}
       <footer className="footer">
 
         <div className="logo">
-          <span className="logo-icon">S</span>
-          <span>SyncSpace</span>
+
+          <span className="logo-icon">
+            S
+          </span>
+
+          <span>
+            SyncSpace
+          </span>
+
         </div>
 
         <p>
