@@ -13,6 +13,7 @@ function App() {
 
     const handleConnect = () => {
       console.log("Socket connected:", socket.id)
+      console.log("Socket object:", socket)
     }
 
     const handleDisconnect = () => {
