@@ -8,7 +8,6 @@ const mongoose = require('mongoose');
 
 dotenv.config();
 
-console.log('CLIENT_URL loaded:', process.env.CLIENT_URL);
 const app = express();
 const server = http.createServer(app);
 
@@ -27,7 +26,7 @@ const io = new Server(server, {
   },
 });
 
-// MongoDB schema: stores all drawings for a room
+// Store drawings for each room in MongoDB
 const drawingSchema = new mongoose.Schema(
   {
     roomId: {
@@ -35,23 +34,47 @@ const drawingSchema = new mongoose.Schema(
       required: true,
       unique: true,
     },
-    lines: {
-      type: Array,
-      default: [],
-    },
-    rectangles: {
-      type: Array,
-      default: [],
-    },
-    texts: {
-      type: Array,
-      default: [],
-    },
+    lines: { type: Array, default: [] },
+    rectangles: { type: Array, default: [] },
+    texts: { type: Array, default: [] },
   },
   { timestamps: true }
 );
 
 const Drawing = mongoose.model('Drawing', drawingSchema);
+
+// Track online users in each room
+const roomUsers = new Map();
+
+function getRoomUsers(roomId) {
+  return Array.from(roomUsers.get(roomId)?.values() || []);
+}
+
+function broadcastRoomUsers(roomId) {
+  io.to(roomId).emit('roomUsers', getRoomUsers(roomId));
+}
+
+// Remove a disconnected user from their room
+function removeUserFromRoom(socket) {
+  const roomId = socket.data.roomId;
+
+  if (!roomId) return;
+
+  const users = roomUsers.get(roomId);
+
+  if (users) {
+    users.delete(socket.id);
+
+    if (users.size === 0) {
+      roomUsers.delete(roomId);
+    }
+  }
+
+  socket.to(roomId).emit('userLeft', socket.id);
+  broadcastRoomUsers(roomId);
+
+  socket.data.roomId = null;
+}
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -61,7 +84,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Get saved drawings for a room
+// Get saved drawings
 app.get('/api/rooms/:roomId/drawings', async (req, res) => {
   try {
     const drawing = await Drawing.findOne({
@@ -79,6 +102,7 @@ app.get('/api/rooms/:roomId/drawings', async (req, res) => {
     });
   } catch (error) {
     console.error('Error loading drawings:', error.message);
+
     res.status(500).json({
       success: false,
       message: 'Could not load drawings',
@@ -86,34 +110,40 @@ app.get('/api/rooms/:roomId/drawings', async (req, res) => {
   }
 });
 
-// Save the current drawing state
+// Save one drawing item
 async function saveDrawing(roomId, type, item) {
-  if (!roomId || !['lines', 'rectangles', 'texts'].includes(type)) {
+  if (
+    !roomId ||
+    !['lines', 'rectangles', 'texts'].includes(type)
+  ) {
     return;
   }
 
-  const update = {
-    $push: { [type]: item },
-    $setOnInsert: { roomId },
-  };
-
   await Drawing.findOneAndUpdate(
     { roomId },
-    update,
-    { upsert: true, new: true, setDefaultsOnInsert: true }
+    {
+      $push: { [type]: item },
+      $setOnInsert: { roomId },
+    },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+    }
   );
 }
 
-// Real-time Socket.IO events
+// Socket.IO events
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
+  // Join a room and load its saved drawings
   socket.on('joinRoom', async (data) => {
     try {
-      // Supports either an object or a roomId string
       const roomId =
         typeof data === 'string' ? data : data?.roomId;
-      const userName =
+
+      const suppliedName =
         typeof data === 'object' ? data?.userName : undefined;
 
       if (!roomId) {
@@ -121,14 +151,66 @@ io.on('connection', (socket) => {
         return;
       }
 
+      // Avoid duplicate registration for the same room
+      if (socket.data.roomId === roomId) {
+        if (suppliedName) {
+          socket.data.userName = suppliedName;
+        }
+
+        const users = roomUsers.get(roomId);
+
+        if (users) {
+          users.set(socket.id, {
+            id: socket.id,
+            userName: socket.data.userName || 'Guest',
+          });
+        }
+
+        broadcastRoomUsers(roomId);
+
+        const existingDrawing = await Drawing.findOne({
+          roomId,
+        }).lean();
+
+        socket.emit('canvasState', {
+          lines: existingDrawing?.lines || [],
+          rectangles: existingDrawing?.rectangles || [],
+          texts: existingDrawing?.texts || [],
+        });
+
+        return;
+      }
+
+      // Remove the user from their previous room, if any
+      if (socket.data.roomId) {
+        socket.leave(socket.data.roomId);
+        removeUserFromRoom(socket);
+      }
+
       socket.join(roomId);
       socket.data.roomId = roomId;
+      socket.data.userName = suppliedName || 'Guest';
+
+      if (!roomUsers.has(roomId)) {
+        roomUsers.set(roomId, new Map());
+      }
+
+      roomUsers.get(roomId).set(socket.id, {
+        id: socket.id,
+        userName: socket.data.userName,
+      });
 
       console.log(
-        `${userName || socket.id} joined room: ${roomId}`
+        `${socket.data.userName} joined room: ${roomId}`
       );
 
-      const drawing = await Drawing.findOne({ roomId }).lean();
+      // Update online users for everyone in this room
+      broadcastRoomUsers(roomId);
+
+      // Send previously saved drawings to the joining user
+      const drawing = await Drawing.findOne({
+        roomId,
+      }).lean();
 
       socket.emit('canvasState', {
         lines: drawing?.lines || [],
@@ -140,12 +222,30 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Broadcast cursor movement to other users in the room
+  socket.on('cursorMove', (data) => {
+    const roomId = socket.data.roomId;
+
+    if (!roomId || data?.roomId !== roomId) return;
+
+    socket.to(roomId).emit('cursorMove', {
+      socketId: socket.id,
+      x: data.x,
+      y: data.y,
+      userName: socket.data.userName || 'Guest',
+      userColor: data.userColor,
+    });
+  });
+
+  // Save and broadcast a line
   socket.on('drawLine', async (data) => {
     try {
-      const roomId = data?.roomId || socket.data.roomId;
-      const line = data?.line || data;
+      const roomId = socket.data.roomId;
 
       if (!roomId) return;
+      if (data?.roomId && data.roomId !== roomId) return;
+
+      const line = data?.line || data;
 
       await saveDrawing(roomId, 'lines', line);
       socket.to(roomId).emit('drawLine', line);
@@ -154,12 +254,15 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Save and broadcast a rectangle
   socket.on('drawRectangle', async (data) => {
     try {
-      const roomId = data?.roomId || socket.data.roomId;
-      const rectangle = data?.rectangle || data;
+      const roomId = socket.data.roomId;
 
       if (!roomId) return;
+      if (data?.roomId && data.roomId !== roomId) return;
+
+      const rectangle = data?.rectangle || data;
 
       await saveDrawing(roomId, 'rectangles', rectangle);
       socket.to(roomId).emit('drawRectangle', rectangle);
@@ -168,12 +271,15 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Save and broadcast text
   socket.on('drawText', async (data) => {
     try {
-      const roomId = data?.roomId || socket.data.roomId;
-      const text = data?.text || data;
+      const roomId = socket.data.roomId;
 
       if (!roomId) return;
+      if (data?.roomId && data.roomId !== roomId) return;
+
+      const text = data?.text || data;
 
       await saveDrawing(roomId, 'texts', text);
       socket.to(roomId).emit('drawText', text);
@@ -182,8 +288,13 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Clean up when a user disconnects
   socket.on('disconnect', () => {
-    console.log('Client disconnecting:', socket.id);
+    const userName = socket.data.userName || socket.id;
+
+    removeUserFromRoom(socket);
+
+    console.log('Client disconnected:', userName);
   });
 });
 

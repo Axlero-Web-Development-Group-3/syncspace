@@ -12,7 +12,9 @@ function Room({ roomId }) {
   const [tool, setTool] = useState('pen')
   const [textInput, setTextInput] = useState('')
   const [textPosition, setTextPosition] = useState(null)
-  const [onlineUsers, setOnlineUsers] = useState(1)
+
+  // Store the actual list of online users
+  const [onlineUsers, setOnlineUsers] = useState([])
 
   const [userName] = useState(
     `User-${Math.floor(Math.random() * 1000)}`
@@ -34,10 +36,11 @@ function Room({ roomId }) {
     const joinRoom = () => {
       console.log('Socket connected:', socket.id)
 
-      // Clear previous room's canvas when switching rooms
       setLines([])
       setRectangles([])
       setTexts([])
+      setOnlineUsers([])
+      setRemoteCursors({})
 
       socket.emit('joinRoom', {
         roomId,
@@ -48,7 +51,6 @@ function Room({ roomId }) {
       console.log('Joined room:', roomId)
     }
 
-    // Receive saved drawings when joining a room
     const handleCanvasState = (drawings) => {
       setLines(drawings.lines || [])
       setRectangles(drawings.rectangles || [])
@@ -69,19 +71,27 @@ function Room({ roomId }) {
       setTexts((prev) => [...prev, text])
     }
 
-    const handleRoomUsers = (count) => {
-      setOnlineUsers(count)
+    // Backend sends an array of users, not a number
+    const handleRoomUsers = (users) => {
+      setOnlineUsers(Array.isArray(users) ? users : [])
+      console.log('Online users:', users)
     }
 
     const handleRemoteCursor = (cursor) => {
+      if (!cursor.socketId || cursor.socketId === socket.id) return
+
       setRemoteCursors((prev) => ({
         ...prev,
         [cursor.socketId]: cursor,
       }))
     }
 
-    const handleUserJoined = (user) => {
-      console.log(`${user.userName} joined the room`)
+    const handleUserLeft = (socketId) => {
+      setRemoteCursors((prev) => {
+        const updated = { ...prev }
+        delete updated[socketId]
+        return updated
+      })
     }
 
     socket.on('connect', joinRoom)
@@ -91,7 +101,7 @@ function Room({ roomId }) {
     socket.on('drawText', handleRemoteText)
     socket.on('roomUsers', handleRoomUsers)
     socket.on('cursorMove', handleRemoteCursor)
-    socket.on('userJoined', handleUserJoined)
+    socket.on('userLeft', handleUserLeft)
 
     if (socket.connected) {
       joinRoom()
@@ -107,7 +117,7 @@ function Room({ roomId }) {
       socket.off('drawText', handleRemoteText)
       socket.off('roomUsers', handleRoomUsers)
       socket.off('cursorMove', handleRemoteCursor)
-      socket.off('userJoined', handleUserJoined)
+      socket.off('userLeft', handleUserLeft)
     }
   }, [roomId, userName, userColor])
 
@@ -124,9 +134,7 @@ function Room({ roomId }) {
     if (!workspace) return
 
     const rect = workspace.getBoundingClientRect()
-
-    const newWidth =
-      ((e.clientX - rect.left) / rect.width) * 100
+    const newWidth = ((e.clientX - rect.left) / rect.width) * 100
 
     if (newWidth >= 30 && newWidth <= 70) {
       setLeftPanelWidth(newWidth)
@@ -158,26 +166,16 @@ function Room({ roomId }) {
     if (!pos) return
 
     if (tool === 'text') {
-      setTextPosition({
-        x: pos.x,
-        y: pos.y,
-      })
+      setTextPosition({ x: pos.x, y: pos.y })
       setTextInput('')
       return
     }
 
     isDrawing.current = true
-
-    startPoint.current = {
-      x: pos.x,
-      y: pos.y,
-    }
+    startPoint.current = { x: pos.x, y: pos.y }
 
     if (tool === 'pen') {
-      setLines((prev) => [
-        ...prev,
-        [pos.x, pos.y],
-      ])
+      setLines((prev) => [...prev, [pos.x, pos.y]])
     }
 
     if (tool === 'rectangle') {
@@ -199,6 +197,7 @@ function Room({ roomId }) {
 
     if (!point) return
 
+    // Send cursor positions at most once every 50 ms
     const now = Date.now()
 
     if (now - lastCursorSend.current >= 50) {
@@ -206,6 +205,8 @@ function Room({ roomId }) {
         roomId,
         x: point.x,
         y: point.y,
+        userName,
+        userColor,
       })
 
       lastCursorSend.current = now
@@ -219,15 +220,9 @@ function Room({ roomId }) {
 
         const lastLine = prev[prev.length - 1]
 
-        const updatedLine = [
-          ...lastLine,
-          point.x,
-          point.y,
-        ]
-
         return [
           ...prev.slice(0, -1),
-          updatedLine,
+          [...lastLine, point.x, point.y],
         ]
       })
     }
@@ -241,15 +236,13 @@ function Room({ roomId }) {
 
         const lastRectangle = prev[prev.length - 1]
 
-        const updatedRectangle = {
-          ...lastRectangle,
-          width: point.x - start.x,
-          height: point.y - start.y,
-        }
-
         return [
           ...prev.slice(0, -1),
-          updatedRectangle,
+          {
+            ...lastRectangle,
+            width: point.x - start.x,
+            height: point.y - start.y,
+          },
         ]
       })
     }
@@ -333,8 +326,46 @@ function Room({ roomId }) {
 
           <span className="online-status">
             <span className="online-dot"></span>
-            {onlineUsers} online
+            {onlineUsers.length} online
           </span>
+
+          <div
+            className="online-users-list"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              flexWrap: 'wrap',
+            }}
+          >
+            {onlineUsers.map((user) => (
+              <span
+                key={user.id}
+                title={user.userName}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  padding: '4px 8px',
+                  border: '1px solid #30384a',
+                  borderRadius: '14px',
+                  fontSize: '12px',
+                  color: '#e5e7eb',
+                }}
+              >
+                <span
+                  style={{
+                    width: '7px',
+                    height: '7px',
+                    borderRadius: '50%',
+                    background: '#34d399',
+                    display: 'inline-block',
+                  }}
+                />
+                {user.userName}
+              </span>
+            ))}
+          </div>
         </div>
 
         <button className="share-room-btn">
@@ -506,15 +537,15 @@ function ReactCursor({ cursor }) {
         x={cursor.x}
         y={cursor.y}
         radius={7}
-        fill={cursor.userColor}
+        fill={cursor.userColor || '#34d399'}
         listening={false}
       />
 
       <Text
         x={cursor.x + 10}
         y={cursor.y - 10}
-        text={cursor.userName}
-        fill={cursor.userColor}
+        text={cursor.userName || 'User'}
+        fill={cursor.userColor || '#34d399'}
         fontSize={14}
         fontStyle="bold"
         listening={false}
