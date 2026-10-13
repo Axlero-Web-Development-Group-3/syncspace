@@ -4,13 +4,19 @@ const http = require('http')
 const cors = require('cors')
 const dotenv = require('dotenv')
 const mongoose = require('mongoose')
+const bcrypt = require('bcryptjs')
+const jwt = require('jsonwebtoken')
 const { Server } = require('socket.io')
+
 const Room = require('./models/Room')
+const User = require('./models/User')
 
 dotenv.config()
 
 const app = express()
 const server = http.createServer(app)
+
+const PORT = process.env.PORT || 5000
 
 const allowedOrigins = [
   'http://localhost:5173',
@@ -27,7 +33,170 @@ const io = new Server(server, {
   },
 })
 
-// Get the list of online users in a room.
+// -------------------- AUTH HELPERS --------------------
+
+function createToken(userId) {
+  if (!process.env.JWT_SECRET) {
+    throw new Error('JWT_SECRET is missing from server/.env')
+  }
+
+  return jwt.sign(
+    { userId: userId.toString() },
+    process.env.JWT_SECRET,
+    { expiresIn: '7d' }
+  )
+}
+
+function publicUser(user) {
+  return {
+    id: user._id,
+    name: user.name,
+    email: user.email,
+  }
+}
+
+// -------------------- REGISTER API --------------------
+
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { name, email, password } = req.body || {}
+
+    if (
+      typeof name !== 'string' ||
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      !name.trim() ||
+      !email.trim() ||
+      !password
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter name, email and password',
+      })
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters',
+      })
+    }
+
+    const normalizedEmail = email.trim().toLowerCase()
+
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    })
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email is already registered',
+      })
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10)
+
+    const user = await User.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      password: hashedPassword,
+    })
+
+    const token = createToken(user._id)
+
+    return res.status(201).json({
+      success: true,
+      message: 'Registration successful',
+      token,
+      user: publicUser(user),
+    })
+  } catch (error) {
+    console.error('Registration error:', error.message)
+
+    if (error.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'Email is already registered',
+      })
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Registration failed. Please try again.',
+    })
+  }
+})
+
+// -------------------- LOGIN API --------------------
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {}
+
+    if (
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      !email.trim() ||
+      !password
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter email and password',
+      })
+    }
+
+    const user = await User.findOne({
+      email: email.trim().toLowerCase(),
+    })
+
+    if (
+      !user ||
+      !(await bcrypt.compare(password, user.password))
+    ) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password',
+      })
+    }
+
+    const token = createToken(user._id)
+
+    return res.json({
+      success: true,
+      message: 'Login successful',
+      token,
+      user: publicUser(user),
+    })
+  } catch (error) {
+    console.error('Login error:', error.message)
+
+    return res.status(500).json({
+      success: false,
+      message: 'Login failed. Please try again.',
+    })
+  }
+})
+
+// -------------------- HEALTH CHECK --------------------
+
+app.get('/', (req, res) => {
+  res.send('SyncSpace server is running')
+})
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'SyncSpace API is healthy',
+    database:
+      mongoose.connection.readyState === 1
+        ? 'connected'
+        : 'disconnected',
+  })
+})
+
+// -------------------- ROOM HELPERS --------------------
+
 function getRoomUsers(roomId) {
   const room = io.sockets.adapter.rooms.get(roomId)
 
@@ -52,7 +221,6 @@ function broadcastRoomUsers(roomId) {
   io.to(roomId).emit('roomUsers', getRoomUsers(roomId))
 }
 
-// Find a room in MongoDB or create it.
 async function getOrCreateRoom(roomId) {
   let room = await Room.findOne({ roomId })
 
@@ -69,27 +237,12 @@ async function getOrCreateRoom(roomId) {
   return room
 }
 
-// Health-check routes.
-app.get('/', (req, res) => {
-  res.send('SyncSpace server is running')
-})
+// -------------------- SOCKET.IO --------------------
 
-app.get('/api/health', (req, res) => {
-  res.json({
-    success: true,
-    message: 'SyncSpace API is healthy',
-    database:
-      mongoose.connection.readyState === 1
-        ? 'connected'
-        : 'disconnected',
-  })
-})
-
-// Socket.IO connection.
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id)
 
-  // Join room and load saved whiteboard and code.
+  // Join a room and load saved whiteboard/code.
   socket.on('joinRoom', async (data) => {
     if (!data || typeof data.roomId !== 'string') return
 
@@ -99,7 +252,7 @@ io.on('connection', (socket) => {
     try {
       const savedRoom = await getOrCreateRoom(roomId)
 
-      // Leave any previously joined room.
+      // Leave any previously joined rooms.
       for (const previousRoom of [...socket.rooms]) {
         if (previousRoom !== socket.id) {
           socket.leave(previousRoom)
@@ -116,7 +269,7 @@ io.on('connection', (socket) => {
 
       socket.data.roomId = roomId
 
-      // Send saved data to the joining user.
+      // Send existing saved content to the joining user.
       socket.emit('canvasState', savedRoom.drawings)
       socket.emit('codeTextState', savedRoom.code || '')
 
@@ -139,7 +292,9 @@ io.on('connection', (socket) => {
       !data?.roomId ||
       !Array.isArray(data.line) ||
       socket.data.roomId !== data.roomId
-    ) return
+    ) {
+      return
+    }
 
     try {
       const result = await Room.updateOne(
@@ -165,7 +320,9 @@ io.on('connection', (socket) => {
       !data?.roomId ||
       !data.rectangle ||
       socket.data.roomId !== data.roomId
-    ) return
+    ) {
+      return
+    }
 
     try {
       const result = await Room.updateOne(
@@ -194,7 +351,9 @@ io.on('connection', (socket) => {
       !data?.roomId ||
       !data.text ||
       socket.data.roomId !== data.roomId
-    ) return
+    ) {
+      return
+    }
 
     try {
       const result = await Room.updateOne(
@@ -214,14 +373,16 @@ io.on('connection', (socket) => {
     }
   })
 
-  // Broadcast cursor movement to other users.
+  // Broadcast cursor movement to other room members.
   socket.on('cursorMove', (data) => {
     if (
       !data?.roomId ||
       socket.data.roomId !== data.roomId ||
       typeof data.x !== 'number' ||
       typeof data.y !== 'number'
-    ) return
+    ) {
+      return
+    }
 
     socket.to(data.roomId).emit('cursorMove', {
       socketId: socket.id,
@@ -232,13 +393,15 @@ io.on('connection', (socket) => {
     })
   })
 
-  // Save the latest code and broadcast it.
+  // Save and broadcast the latest code.
   socket.on('codeTextUpdate', async (data) => {
     if (
       !data?.roomId ||
       typeof data.code !== 'string' ||
       socket.data.roomId !== data.roomId
-    ) return
+    ) {
+      return
+    }
 
     try {
       const result = await Room.updateOne(
@@ -261,7 +424,7 @@ io.on('connection', (socket) => {
     }
   })
 
-  // Handle disconnect.
+  // Handle disconnection.
   socket.on('disconnect', () => {
     const roomId = socket.data.roomId
 
@@ -274,13 +437,16 @@ io.on('connection', (socket) => {
   })
 })
 
-// Connect MongoDB before starting the server.
-const PORT = process.env.PORT || 5000
+// -------------------- START SERVER --------------------
 
 async function startServer() {
   try {
     if (!process.env.MONGODB_URI) {
       throw new Error('MONGODB_URI is missing from server/.env')
+    }
+
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is missing from server/.env')
     }
 
     await mongoose.connect(process.env.MONGODB_URI)

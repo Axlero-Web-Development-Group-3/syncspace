@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from 'react'
 import './App.css'
 import Room from './Room'
@@ -14,6 +13,20 @@ function App() {
   )
 
   const [showJoin, setShowJoin] = useState(false)
+  const [showAuth, setShowAuth] = useState(false)
+  const [authMode, setAuthMode] = useState('login')
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authMessage, setAuthMessage] = useState('')
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem('syncspace-user') || 'null')
+    } catch {
+      return null
+    }
+  })
 
   useEffect(() => {
     const savedRoomId = sessionStorage.getItem('syncspace-roomId')
@@ -23,9 +36,11 @@ function App() {
     const handleConnect = () => {
       console.log('Socket connected:', socket.id)
 
-      // Refresh ke baad saved room mein dobara join karo
       if (savedRoomId) {
-        socket.emit('joinRoom', savedRoomId)
+        socket.emit('joinRoom', {
+          roomId: savedRoomId,
+          userName: currentUser?.name || 'Guest',
+        })
       }
     }
 
@@ -36,7 +51,6 @@ function App() {
     socket.on('connect', handleConnect)
     socket.on('disconnect', handleDisconnect)
 
-    // Agar socket pehle se connected hai
     if (socket.connected) {
       handleConnect()
     }
@@ -58,7 +72,10 @@ function App() {
     setShowRoom(true)
 
     if (socket.connected) {
-      socket.emit('joinRoom', newRoomId)
+      socket.emit('joinRoom', {
+        roomId: newRoomId,
+        userName: currentUser?.name || 'Guest',
+      })
     }
   }
 
@@ -76,7 +93,10 @@ function App() {
     setShowRoom(true)
 
     if (socket.connected) {
-      socket.emit('joinRoom', cleanRoomId)
+      socket.emit('joinRoom', {
+        roomId: cleanRoomId,
+        userName: currentUser?.name || 'Guest',
+      })
     }
   }
 
@@ -86,21 +106,181 @@ function App() {
     setShowRoom(false)
   }
 
+  const openAuth = (mode) => {
+    setAuthMode(mode)
+    setAuthMessage('')
+    setName('')
+    setEmail('')
+    setPassword('')
+    setShowAuth(true)
+  }
+
+  const handleAuth = async (event) => {
+    event.preventDefault()
+    setAuthMessage('')
+    setAuthLoading(true)
+
+    try {
+      const endpoint =
+        authMode === 'login' ? 'login' : 'register'
+
+      const payload =
+        authMode === 'login'
+          ? { email, password }
+          : { name, email, password }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/${endpoint}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }
+      )
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Authentication failed.')
+      }
+
+      sessionStorage.setItem('syncspace-token', data.token)
+      sessionStorage.setItem(
+        'syncspace-user',
+        JSON.stringify(data.user)
+      )
+
+      setCurrentUser(data.user)
+      setAuthMessage(
+        authMode === 'login'
+          ? 'Login successful!'
+          : 'Registration successful!'
+      )
+
+      setShowAuth(false)
+      setPassword('')
+      alert(
+        `Welcome${data.user?.name ? `, ${data.user.name}` : ''}!`
+      )
+    } catch (error) {
+      setAuthMessage(
+        error.message || 'Unable to connect to the server.'
+      )
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const logout = () => {
+    sessionStorage.removeItem('syncspace-token')
+    sessionStorage.removeItem('syncspace-user')
+    setCurrentUser(null)
+    alert('You have logged out.')
+  }
+
   if (showRoom) {
     return <Room roomId={roomId} />
   }
 
   return (
     <div className="app">
+      {/* Login and Register Popup */}
+      {showAuth && (
+        <div className="join-overlay">
+          <div className="join-box">
+            <button
+              type="button"
+              className="cancel-btn"
+              onClick={() => setShowAuth(false)}
+            >
+              Close ✕
+            </button>
+
+            <h2>
+              {authMode === 'login'
+                ? 'Welcome Back'
+                : 'Create Your Account'}
+            </h2>
+
+            <p>
+              {authMode === 'login'
+                ? 'Login to your SyncSpace account.'
+                : 'Register to get started with SyncSpace.'}
+            </p>
+
+            <form onSubmit={handleAuth}>
+              {authMode === 'register' && (
+                <input
+                  type="text"
+                  placeholder="Full Name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                />
+              )}
+
+              <input
+                type="email"
+                placeholder="Email Address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+
+              <input
+                type="password"
+                placeholder="Password (minimum 6 characters)"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                minLength={6}
+                required
+              />
+
+              {authMessage && (
+                <p role="alert">{authMessage}</p>
+              )}
+
+              <button
+                type="submit"
+                className="join-confirm-btn"
+                disabled={authLoading}
+              >
+                {authLoading
+                  ? 'Please wait...'
+                  : authMode === 'login'
+                    ? 'Login'
+                    : 'Create Account'}
+              </button>
+            </form>
+
+            <p>
+              {authMode === 'login'
+                ? "Don't have an account?"
+                : 'Already have an account?'}
+              {' '}
+              <button
+                type="button"
+                className="cancel-btn"
+                onClick={() => {
+                  setAuthMode(
+                    authMode === 'login' ? 'register' : 'login'
+                  )
+                  setAuthMessage('')
+                }}
+              >
+                {authMode === 'login' ? 'Register' : 'Login'}
+              </button>
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Join Room Popup */}
       {showJoin && (
         <div className="join-overlay">
           <div className="join-box">
             <h2>Join a Room</h2>
-
-            <p>
-              Enter the room ID to join a collaboration room.
-            </p>
+            <p>Enter the room ID to join a collaboration room.</p>
 
             <input
               type="text"
@@ -145,7 +325,21 @@ function App() {
         </nav>
 
         <div className="nav-actions">
-          <button className="login-btn">Login</button>
+          {currentUser ? (
+            <>
+              <span>{currentUser.name}</span>
+              <button className="login-btn" onClick={logout}>
+                Logout
+              </button>
+            </>
+          ) : (
+            <button
+              className="login-btn"
+              onClick={() => openAuth('login')}
+            >
+              Login
+            </button>
+          )}
 
           <button
             className="get-started-btn"
@@ -160,9 +354,7 @@ function App() {
       <main>
         <section id="home" className="hero-section">
           <div className="hero-content">
-            <p className="hero-tag">
-              REAL-TIME COLLABORATION
-            </p>
+            <p className="hero-tag">REAL-TIME COLLABORATION</p>
 
             <h1>
               Collaborate. Code.
@@ -177,10 +369,7 @@ function App() {
             </p>
 
             <div className="hero-buttons">
-              <button
-                className="primary-btn"
-                onClick={createRoom}
-              >
+              <button className="primary-btn" onClick={createRoom}>
                 Create a Room →
               </button>
 
@@ -196,12 +385,9 @@ function App() {
             </div>
           </div>
 
-          {/* Workspace Preview */}
           <div className="workspace-preview">
             <div className="preview-header">
-              <div className="preview-room">
-                SyncSpace / room-42
-              </div>
+              <div className="preview-room">SyncSpace / room-42</div>
 
               <div className="preview-online">
                 <span className="online-dot"></span>
@@ -210,52 +396,31 @@ function App() {
             </div>
 
             <div className="preview-content">
-              {/* Whiteboard */}
               <div className="preview-whiteboard">
-                <div className="preview-title">
-                  WHITEBOARD
-                </div>
+                <div className="preview-title">WHITEBOARD</div>
 
                 <div className="whiteboard-content">
-                  <div className="architecture-box">
-                    React
-                  </div>
-
+                  <div className="architecture-box">React</div>
                   <div className="arrow">↓</div>
-
-                  <div className="architecture-box">
-                    Node.js
-                  </div>
-
+                  <div className="architecture-box">Node.js</div>
                   <div className="arrow">↓</div>
-
-                  <div className="architecture-box">
-                    MongoDB
-                  </div>
+                  <div className="architecture-box">MongoDB</div>
                 </div>
               </div>
 
-              {/* Code Editor */}
               <div className="preview-editor">
-                <div className="preview-title">
-                  CODE EDITOR
-                </div>
+                <div className="preview-title">CODE EDITOR</div>
 
                 <div className="code-content">
-                  <pre>
-{`function createRoom(user) {
+                  <pre>{`function createRoom(user) {
   const room = {
     owner: user,
     active: true
   };
 
   return room;
-}`}
-                  </pre>
-
-                  <div className="cursor-label">
-                    Shivani
-                  </div>
+}`}</pre>
+                  <div className="cursor-label">Shivani</div>
                 </div>
               </div>
             </div>
@@ -265,14 +430,8 @@ function App() {
         {/* Features Section */}
         <section id="features" className="features-section">
           <div className="section-heading">
-            <p className="section-tag">
-              POWERFUL FEATURES
-            </p>
-
-            <h2>
-              Everything you need to collaborate
-            </h2>
-
+            <p className="section-tag">POWERFUL FEATURES</p>
+            <h2>Everything you need to collaborate</h2>
             <p>
               Designed for developers, technical teams,
               students, and remote collaboration.
@@ -321,13 +480,8 @@ function App() {
         {/* About Section */}
         <section id="about" className="about-section">
           <div>
-            <p className="section-tag">
-              BUILT FOR COLLABORATION
-            </p>
-
-            <h2>
-              One workspace. Multiple possibilities.
-            </h2>
+            <p className="section-tag">BUILT FOR COLLABORATION</p>
+            <h2>One workspace. Multiple possibilities.</h2>
           </div>
 
           <p>
