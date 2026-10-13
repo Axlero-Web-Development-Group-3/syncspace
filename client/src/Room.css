@@ -954,3 +954,35 @@ body {
   pointer-events: auto;
 }
 
+button.feature-card {
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: inherit;
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+button.feature-card:hover {
+  transform: translateY(-5px);
+  border-color: #5f6fff;
+  box-shadow: 0 8px 24px rgba(95, 111, 255, 0.12);
+}
+
+button.feature-card:focus-visible {
+  outline: 2px solid #5f6fff;
+  outline-offset: 4px;
+}
+
+.feature-link {
+  display: inline-block;
+  margin-top: 12px;
+  color: #8b96ff;
+  font-weight: 600;
+}
+
+

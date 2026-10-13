@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react'
 import './App.css'
 import Room from './Room'
@@ -20,26 +21,44 @@ function App() {
   const [password, setPassword] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
   const [authMessage, setAuthMessage] = useState('')
+
+  const [initialFeature, setInitialFeature] = useState(
+    () => sessionStorage.getItem('syncspace-initial-feature') || 'collaboration'
+  )
+
   const [currentUser, setCurrentUser] = useState(() => {
     try {
-      return JSON.parse(sessionStorage.getItem('syncspace-user') || 'null')
+      return JSON.parse(
+        sessionStorage.getItem('syncspace-user') || 'null'
+      )
     } catch {
       return null
     }
   })
 
+  // Socket.IO connection
   useEffect(() => {
-    const savedRoomId = sessionStorage.getItem('syncspace-roomId')
-
     socket.connect()
 
     const handleConnect = () => {
       console.log('Socket connected:', socket.id)
 
+      const savedRoomId = sessionStorage.getItem('syncspace-roomId')
+
       if (savedRoomId) {
+        let savedUser = null
+
+        try {
+          savedUser = JSON.parse(
+            sessionStorage.getItem('syncspace-user') || 'null'
+          )
+        } catch {
+          savedUser = null
+        }
+
         socket.emit('joinRoom', {
           roomId: savedRoomId,
-          userName: currentUser?.name || 'Guest',
+          userName: savedUser?.name || 'Guest',
         })
       }
     }
@@ -62,14 +81,46 @@ function App() {
     }
   }, [])
 
-  const createRoom = () => {
+  // Browser Back button
+  useEffect(() => {
+    const handlePopState = () => {
+      if (sessionStorage.getItem('syncspace-roomId')) {
+        sessionStorage.removeItem('syncspace-roomId')
+        sessionStorage.removeItem('syncspace-initial-feature')
+
+        setRoomId('')
+        setShowRoom(false)
+        setShowJoin(false)
+        setInitialFeature('collaboration')
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [])
+
+  // Create a room and remember which feature was selected
+  const createRoom = (feature = 'collaboration') => {
     const newRoomId = `room-${Math.random()
       .toString(36)
       .substring(2, 8)}`
 
+    window.history.pushState(
+      { syncspaceRoom: true, roomId: newRoomId },
+      '',
+      `#room/${newRoomId}`
+    )
+
     sessionStorage.setItem('syncspace-roomId', newRoomId)
+    sessionStorage.setItem('syncspace-initial-feature', feature)
+
     setRoomId(newRoomId)
+    setInitialFeature(feature)
     setShowRoom(true)
+    setShowJoin(false)
 
     if (socket.connected) {
       socket.emit('joinRoom', {
@@ -79,6 +130,7 @@ function App() {
     }
   }
 
+  // Join an existing room
   const joinRoom = () => {
     const cleanRoomId = roomId.trim()
 
@@ -87,8 +139,17 @@ function App() {
       return
     }
 
+    window.history.pushState(
+      { syncspaceRoom: true, roomId: cleanRoomId },
+      '',
+      `#room/${cleanRoomId}`
+    )
+
     sessionStorage.setItem('syncspace-roomId', cleanRoomId)
+    sessionStorage.setItem('syncspace-initial-feature', 'collaboration')
+
     setRoomId(cleanRoomId)
+    setInitialFeature('collaboration')
     setShowJoin(false)
     setShowRoom(true)
 
@@ -100,12 +161,26 @@ function App() {
     }
   }
 
+  // Return to Home
   const leaveRoom = () => {
     sessionStorage.removeItem('syncspace-roomId')
+    sessionStorage.removeItem('syncspace-initial-feature')
+
     setRoomId('')
     setShowRoom(false)
+    setShowJoin(false)
+    setInitialFeature('collaboration')
+
+    if (window.location.hash.startsWith('#room/')) {
+      window.history.replaceState(
+        { syncspaceHome: true },
+        '',
+        `${window.location.pathname}${window.location.search}`
+      )
+    }
   }
 
+  // Login/Register popup
   const openAuth = (mode) => {
     setAuthMode(mode)
     setAuthMessage('')
@@ -115,14 +190,14 @@ function App() {
     setShowAuth(true)
   }
 
+  // Authentication API
   const handleAuth = async (event) => {
     event.preventDefault()
     setAuthMessage('')
     setAuthLoading(true)
 
     try {
-      const endpoint =
-        authMode === 'login' ? 'login' : 'register'
+      const endpoint = authMode === 'login' ? 'login' : 'register'
 
       const payload =
         authMode === 'login'
@@ -145,10 +220,7 @@ function App() {
       }
 
       sessionStorage.setItem('syncspace-token', data.token)
-      sessionStorage.setItem(
-        'syncspace-user',
-        JSON.stringify(data.user)
-      )
+      sessionStorage.setItem('syncspace-user', JSON.stringify(data.user))
 
       setCurrentUser(data.user)
       setAuthMessage(
@@ -159,9 +231,8 @@ function App() {
 
       setShowAuth(false)
       setPassword('')
-      alert(
-        `Welcome${data.user?.name ? `, ${data.user.name}` : ''}!`
-      )
+
+      alert(`Welcome${data.user?.name ? `, ${data.user.name}` : ''}!`)
     } catch (error) {
       setAuthMessage(
         error.message || 'Unable to connect to the server.'
@@ -171,6 +242,7 @@ function App() {
     }
   }
 
+  // Logout
   const logout = () => {
     sessionStorage.removeItem('syncspace-token')
     sessionStorage.removeItem('syncspace-user')
@@ -178,8 +250,15 @@ function App() {
     alert('You have logged out.')
   }
 
+  // Show collaboration room
   if (showRoom) {
-    return <Room roomId={roomId} />
+    return (
+      <Room
+        roomId={roomId}
+        onBack={leaveRoom}
+        initialFeature={initialFeature}
+      />
+    )
   }
 
   return (
@@ -236,9 +315,7 @@ function App() {
                 required
               />
 
-              {authMessage && (
-                <p role="alert">{authMessage}</p>
-              )}
+              {authMessage && <p role="alert">{authMessage}</p>}
 
               <button
                 type="submit"
@@ -256,8 +333,8 @@ function App() {
             <p>
               {authMode === 'login'
                 ? "Don't have an account?"
-                : 'Already have an account?'}
-              {' '}
+                : 'Already have an account?'}{' '}
+
               <button
                 type="button"
                 className="cancel-btn"
@@ -279,6 +356,14 @@ function App() {
       {showJoin && (
         <div className="join-overlay">
           <div className="join-box">
+            <button
+              type="button"
+              className="cancel-btn"
+              onClick={() => setShowJoin(false)}
+            >
+              Close ✕
+            </button>
+
             <h2>Join a Room</h2>
             <p>Enter the room ID to join a collaboration room.</p>
 
@@ -294,6 +379,7 @@ function App() {
 
             <div className="join-actions">
               <button
+                type="button"
                 className="cancel-btn"
                 onClick={() => setShowJoin(false)}
               >
@@ -301,6 +387,7 @@ function App() {
               </button>
 
               <button
+                type="button"
                 className="join-confirm-btn"
                 onClick={joinRoom}
               >
@@ -328,12 +415,17 @@ function App() {
           {currentUser ? (
             <>
               <span>{currentUser.name}</span>
-              <button className="login-btn" onClick={logout}>
+              <button
+                type="button"
+                className="login-btn"
+                onClick={logout}
+              >
                 Logout
               </button>
             </>
           ) : (
             <button
+              type="button"
               className="login-btn"
               onClick={() => openAuth('login')}
             >
@@ -342,16 +434,17 @@ function App() {
           )}
 
           <button
+            type="button"
             className="get-started-btn"
-            onClick={createRoom}
+            onClick={() => createRoom('collaboration')}
           >
             Get Started
           </button>
         </div>
       </header>
 
-      {/* Hero Section */}
       <main>
+        {/* Hero Section */}
         <section id="home" className="hero-section">
           <div className="hero-content">
             <p className="hero-tag">REAL-TIME COLLABORATION</p>
@@ -369,11 +462,16 @@ function App() {
             </p>
 
             <div className="hero-buttons">
-              <button className="primary-btn" onClick={createRoom}>
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={() => createRoom('collaboration')}
+              >
                 Create a Room →
               </button>
 
               <button
+                type="button"
                 className="secondary-btn"
                 onClick={() => {
                   setRoomId('')
@@ -427,7 +525,7 @@ function App() {
           </div>
         </section>
 
-        {/* Features Section */}
+        {/* Functional Features Section */}
         <section id="features" className="features-section">
           <div className="section-heading">
             <p className="section-tag">POWERFUL FEATURES</p>
@@ -439,41 +537,72 @@ function App() {
           </div>
 
           <div className="feature-grid">
-            <div className="feature-card">
+            <button
+              type="button"
+              className="feature-card"
+              onClick={() => createRoom('collaboration')}
+            >
               <div className="feature-icon">✦</div>
               <h3>Real-time Collaboration</h3>
               <p>
                 Work together with multiple users and see
                 changes instantly without refreshing the page.
               </p>
-            </div>
+              <span className="feature-link">
+                Start Collaborating →
+              </span>
+            </button>
 
-            <div className="feature-card">
+            <button
+              type="button"
+              className="feature-card"
+              onClick={() => createRoom('whiteboard')}
+            >
               <div className="feature-icon">⌘</div>
               <h3>Collaborative Whiteboard</h3>
               <p>
                 Draw system architectures, diagrams,
                 flows, and ideas on a shared digital canvas.
               </p>
-            </div>
+              <span className="feature-link">
+                Open Whiteboard →
+              </span>
+            </button>
 
-            <div className="feature-card">
+            <button
+              type="button"
+              className="feature-card"
+              onClick={() => createRoom('editor')}
+            >
               <div className="feature-icon">&lt;/&gt;</div>
               <h3>Shared Code Editor</h3>
               <p>
                 Write and edit code together using a
-                powerful developer focused editor.
+                powerful developer-focused editor.
               </p>
-            </div>
+              <span className="feature-link">
+                Open Code Editor →
+              </span>
+            </button>
 
-            <div className="feature-card">
+            <button
+              type="button"
+              className="feature-card"
+              onClick={() => {
+                setRoomId('')
+                setShowJoin(true)
+              }}
+            >
               <div className="feature-icon">◉</div>
               <h3>Private Rooms</h3>
               <p>
-                Create dedicated rooms and invite teammates,
-                interviewers, or collaborators.
+                Join a dedicated room using its Room ID
+                and collaborate with your teammates.
               </p>
-            </div>
+              <span className="feature-link">
+                Join a Private Room →
+              </span>
+            </button>
           </div>
         </section>
 

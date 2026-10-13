@@ -5,7 +5,11 @@ import Editor from '@monaco-editor/react'
 import { useState, useRef, useEffect } from 'react'
 import { socket } from './lib/socket'
 
-function Room({ roomId }) {
+function Room({
+  roomId,
+  onBack,
+  initialFeature = 'collaboration',
+}) {
   const [lines, setLines] = useState([])
   const [rectangles, setRectangles] = useState([])
   const [texts, setTexts] = useState([])
@@ -16,7 +20,12 @@ function Room({ roomId }) {
 
   const [onlineUsers, setOnlineUsers] = useState([])
   const [remoteCursors, setRemoteCursors] = useState({})
-  const [leftPanelWidth, setLeftPanelWidth] = useState(50)
+
+  const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
+    if (initialFeature === 'whiteboard') return 65
+    if (initialFeature === 'editor') return 35
+    return 50
+  })
 
   const [code, setCode] = useState('// Start coding together...\n')
 
@@ -36,12 +45,23 @@ function Room({ roomId }) {
   const codeRef = useRef(code)
   const applyingRemoteCode = useRef(false)
 
+  // Give more space to the selected feature.
+  useEffect(() => {
+    if (initialFeature === 'whiteboard') {
+      setLeftPanelWidth(65)
+    } else if (initialFeature === 'editor') {
+      setLeftPanelWidth(35)
+    } else {
+      setLeftPanelWidth(50)
+    }
+  }, [initialFeature, roomId])
+
   // Keep the latest code available to event handlers.
   useEffect(() => {
     codeRef.current = code
   }, [code])
 
-  // Connect to room and listen for updates.
+  // Connect to the room and listen for updates.
   useEffect(() => {
     const joinRoom = () => {
       setLines([])
@@ -98,7 +118,7 @@ function Room({ roomId }) {
       })
     }
 
-    // Receive the current room code from the server.
+    // Receive saved room code.
     const handleCodeState = (initialCode) => {
       const nextCode =
         typeof initialCode === 'string' ? initialCode : ''
@@ -140,7 +160,6 @@ function Room({ roomId }) {
     socket.on('roomUsers', handleRoomUsers)
     socket.on('cursorMove', handleRemoteCursor)
     socket.on('userLeft', handleUserLeft)
-
     socket.on('codeTextState', handleCodeState)
     socket.on('codeTextUpdate', handleCodeUpdate)
 
@@ -159,13 +178,12 @@ function Room({ roomId }) {
       socket.off('roomUsers', handleRoomUsers)
       socket.off('cursorMove', handleRemoteCursor)
       socket.off('userLeft', handleUserLeft)
-
       socket.off('codeTextState', handleCodeState)
       socket.off('codeTextUpdate', handleCodeUpdate)
     }
   }, [roomId, userName, userColor])
 
-  // Monaco editor mount.
+  // Monaco editor setup.
   const handleEditorMount = (editor) => {
     editorRef.current = editor
 
@@ -174,7 +192,6 @@ function Room({ roomId }) {
       domReadOnly: false,
     })
 
-    // Keep the editor's initial value in sync with component state.
     if (editor.getValue() !== codeRef.current) {
       editor.setValue(codeRef.current)
     }
@@ -182,14 +199,13 @@ function Room({ roomId }) {
     console.log('Monaco editor mounted and ready for typing')
   }
 
-  // Send code changes to the server.
+  // Broadcast code changes.
   const handleCodeChange = (value) => {
     const updatedCode = value ?? ''
 
     codeRef.current = updatedCode
     setCode(updatedCode)
 
-    // Do not rebroadcast a change applied from another user.
     if (applyingRemoteCode.current) return
 
     if (socket.connected) {
@@ -251,7 +267,10 @@ function Room({ roomId }) {
     if (!position) return
 
     if (tool === 'text') {
-      setTextPosition({ x: position.x, y: position.y })
+      setTextPosition({
+        x: position.x,
+        y: position.y,
+      })
       setTextInput('')
       return
     }
@@ -399,6 +418,7 @@ function Room({ roomId }) {
     setTextPosition(null)
   }
 
+  // Copy room link.
   const handleShareRoom = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href)
@@ -438,12 +458,23 @@ function Room({ roomId }) {
           </div>
         </div>
 
-        <button
-          className="share-room-btn"
-          onClick={handleShareRoom}
-        >
-          Share Room
-        </button>
+        <div className="room-header-actions">
+          <button
+            type="button"
+            className="share-room-btn"
+            onClick={onBack}
+          >
+            ← Back to Home
+          </button>
+
+          <button
+            type="button"
+            className="share-room-btn"
+            onClick={handleShareRoom}
+          >
+            Share Room
+          </button>
+        </div>
       </header>
 
       <div className="workspace">
@@ -456,6 +487,7 @@ function Room({ roomId }) {
 
             <div className="tools">
               <button
+                type="button"
                 className={tool === 'pen' ? 'tool-btn active' : 'tool-btn'}
                 onClick={() => setTool('pen')}
               >
@@ -463,8 +495,11 @@ function Room({ roomId }) {
               </button>
 
               <button
+                type="button"
                 className={
-                  tool === 'rectangle' ? 'tool-btn active' : 'tool-btn'
+                  tool === 'rectangle'
+                    ? 'tool-btn active'
+                    : 'tool-btn'
                 }
                 onClick={() => setTool('rectangle')}
               >
@@ -472,6 +507,7 @@ function Room({ roomId }) {
               </button>
 
               <button
+                type="button"
                 className={tool === 'text' ? 'tool-btn active' : 'tool-btn'}
                 onClick={() => setTool('text')}
               >
@@ -544,7 +580,9 @@ function Room({ roomId }) {
                 <input
                   autoFocus
                   value={textInput}
-                  onChange={(event) => setTextInput(event.target.value)}
+                  onChange={(event) =>
+                    setTextInput(event.target.value)
+                  }
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') handleAddText()
                     if (event.key === 'Escape') handleCancelText()
@@ -553,8 +591,12 @@ function Room({ roomId }) {
                 />
 
                 <div className="text-actions">
-                  <button onClick={handleAddText}>Add</button>
-                  <button onClick={handleCancelText}>Cancel</button>
+                  <button type="button" onClick={handleAddText}>
+                    Add
+                  </button>
+                  <button type="button" onClick={handleCancelText}>
+                    Cancel
+                  </button>
                 </div>
               </div>
             )}
