@@ -25,7 +25,14 @@ const roomSchema = new mongoose.Schema(
       },
     },
 
+    // Legacy code string, retained for migration/compatibility.
     code: {
+      type: String,
+      default: '',
+    },
+
+    // Base64-encoded Yjs document state.
+    yjsState: {
       type: String,
       default: '',
     },

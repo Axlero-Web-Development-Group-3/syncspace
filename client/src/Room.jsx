@@ -2,7 +2,10 @@
 import './Room.css'
 import { Stage, Layer, Line, Rect, Text, Circle } from 'react-konva'
 import Editor from '@monaco-editor/react'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import * as Y from 'yjs'
+import { MonacoBinding } from 'y-monaco'
+import { Awareness } from 'y-protocols/awareness'
 import { socket } from './lib/socket'
 
 function Room({
@@ -13,39 +16,36 @@ function Room({
   const [lines, setLines] = useState([])
   const [rectangles, setRectangles] = useState([])
   const [texts, setTexts] = useState([])
-
   const [tool, setTool] = useState('pen')
   const [textInput, setTextInput] = useState('')
   const [textPosition, setTextPosition] = useState(null)
-
   const [onlineUsers, setOnlineUsers] = useState([])
   const [remoteCursors, setRemoteCursors] = useState({})
-
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
     if (initialFeature === 'whiteboard') return 65
     if (initialFeature === 'editor') return 35
     return 50
   })
 
-  const [code, setCode] = useState('// Start coding together...\n')
-
   const [userName] = useState(
     () => `User-${Math.floor(Math.random() * 1000)}`
   )
-
   const [userColor] = useState(
     () => `hsl(${Math.floor(Math.random() * 360)}, 80%, 60%)`
   )
 
   const editorRef = useRef(null)
+  const ydocRef = useRef(null)
+  const ytextRef = useRef(null)
+  const awarenessRef = useRef(null)
+  const bindingRef = useRef(null)
+  const syncReadyRef = useRef(false)
+
   const isDrawing = useRef(false)
   const startPoint = useRef(null)
   const isResizing = useRef(false)
   const lastCursorSend = useRef(0)
-  const codeRef = useRef(code)
-  const applyingRemoteCode = useRef(false)
 
-  // Give more space to the selected feature.
   useEffect(() => {
     if (initialFeature === 'whiteboard') {
       setLeftPanelWidth(65)
@@ -56,13 +56,112 @@ function Room({
     }
   }, [initialFeature, roomId])
 
-  // Keep the latest code available to event handlers.
-  useEffect(() => {
-    codeRef.current = code
-  }, [code])
+  const handleEditorMount = useCallback((editor) => {
+    editorRef.current = editor
 
-  // Connect to the room and listen for updates.
+    editor.updateOptions({
+      readOnly: false,
+      domReadOnly: false,
+    })
+
+    const ytext = ytextRef.current
+    const awareness = awarenessRef.current
+
+    // Wait until the server's initial Yjs state has arrived.
+    if (
+      syncReadyRef.current &&
+      ytext &&
+      awareness &&
+      editor.getModel() &&
+      !bindingRef.current
+    ) {
+      bindingRef.current = new MonacoBinding(
+        ytext,
+        editor.getModel(),
+        new Set([editor]),
+        awareness
+      )
+    }
+  }, [])
+
   useEffect(() => {
+    const ydoc = new Y.Doc()
+    const ytext = ydoc.getText('monaco')
+    const awareness = new Awareness(ydoc)
+
+    ydocRef.current = ydoc
+    ytextRef.current = ytext
+    awarenessRef.current = awareness
+    syncReadyRef.current = false
+
+    awareness.setLocalStateField('user', {
+      name: userName,
+      color: userColor,
+    })
+
+    const bindEditor = () => {
+      const editor = editorRef.current
+      const model = editor?.getModel()
+
+      if (
+        !syncReadyRef.current ||
+        !editor ||
+        !model ||
+        bindingRef.current
+      ) {
+        return
+      }
+
+      bindingRef.current = new MonacoBinding(
+        ytext,
+        model,
+        new Set([editor]),
+        awareness
+      )
+    }
+
+    const handleYjsSync = (update) => {
+      if (!Array.isArray(update)) return
+
+      try {
+        // Server sends a complete Yjs state as an array of bytes.
+        Y.applyUpdate(
+          ydoc,
+          new Uint8Array(update),
+          'server-state'
+        )
+
+        syncReadyRef.current = true
+        bindEditor()
+      } catch (error) {
+        console.error('Failed to load Yjs state:', error)
+      }
+    }
+
+    const handleYjsUpdate = (update) => {
+      if (!Array.isArray(update)) return
+
+      try {
+        Y.applyUpdate(
+          ydoc,
+          new Uint8Array(update),
+          'remote'
+        )
+      } catch (error) {
+        console.error('Failed to apply remote Yjs update:', error)
+      }
+    }
+
+    const handleLocalUpdate = (update, origin) => {
+      if (origin === 'remote' || origin === 'server-state') return
+      if (!syncReadyRef.current || !socket.connected) return
+
+      socket.emit('yjsUpdate', {
+        roomId,
+        update: Array.from(update),
+      })
+    }
+
     const joinRoom = () => {
       setLines([])
       setRectangles([])
@@ -75,8 +174,6 @@ function Room({
         userName,
         userColor,
       })
-
-      console.log('Joined room:', roomId)
     }
 
     const handleCanvasState = (drawings) => {
@@ -93,8 +190,8 @@ function Room({
       setRectangles((previous) => [...previous, rectangle])
     }
 
-    const handleRemoteText = (text) => {
-      setTexts((previous) => [...previous, text])
+    const handleRemoteText = (item) => {
+      setTexts((previous) => [...previous, item])
     }
 
     const handleRoomUsers = (users) => {
@@ -118,39 +215,7 @@ function Room({
       })
     }
 
-    // Receive saved room code.
-    const handleCodeState = (initialCode) => {
-      const nextCode =
-        typeof initialCode === 'string' ? initialCode : ''
-
-      applyingRemoteCode.current = true
-      codeRef.current = nextCode
-      setCode(nextCode)
-
-      if (editorRef.current) {
-        editorRef.current.setValue(nextCode)
-      }
-
-      applyingRemoteCode.current = false
-    }
-
-    // Receive code changes from another user.
-    const handleCodeUpdate = (updatedCode) => {
-      if (typeof updatedCode !== 'string') return
-
-      applyingRemoteCode.current = true
-      codeRef.current = updatedCode
-      setCode(updatedCode)
-
-      if (
-        editorRef.current &&
-        editorRef.current.getValue() !== updatedCode
-      ) {
-        editorRef.current.setValue(updatedCode)
-      }
-
-      applyingRemoteCode.current = false
-    }
+    ydoc.on('update', handleLocalUpdate)
 
     socket.on('connect', joinRoom)
     socket.on('canvasState', handleCanvasState)
@@ -160,8 +225,8 @@ function Room({
     socket.on('roomUsers', handleRoomUsers)
     socket.on('cursorMove', handleRemoteCursor)
     socket.on('userLeft', handleUserLeft)
-    socket.on('codeTextState', handleCodeState)
-    socket.on('codeTextUpdate', handleCodeUpdate)
+    socket.on('yjsSync', handleYjsSync)
+    socket.on('yjsUpdate', handleYjsUpdate)
 
     if (socket.connected) {
       joinRoom()
@@ -178,45 +243,26 @@ function Room({
       socket.off('roomUsers', handleRoomUsers)
       socket.off('cursorMove', handleRemoteCursor)
       socket.off('userLeft', handleUserLeft)
-      socket.off('codeTextState', handleCodeState)
-      socket.off('codeTextUpdate', handleCodeUpdate)
+      socket.off('yjsSync', handleYjsSync)
+      socket.off('yjsUpdate', handleYjsUpdate)
+
+      ydoc.off('update', handleLocalUpdate)
+
+      bindingRef.current?.destroy()
+      bindingRef.current = null
+      editorRef.current = null
+
+      awareness.destroy()
+      ydoc.destroy()
+
+      ydocRef.current = null
+      ytextRef.current = null
+      awarenessRef.current = null
+      syncReadyRef.current = false
     }
   }, [roomId, userName, userColor])
 
-  // Monaco editor setup.
-  const handleEditorMount = (editor) => {
-    editorRef.current = editor
-
-    editor.updateOptions({
-      readOnly: false,
-      domReadOnly: false,
-    })
-
-    if (editor.getValue() !== codeRef.current) {
-      editor.setValue(codeRef.current)
-    }
-
-    console.log('Monaco editor mounted and ready for typing')
-  }
-
-  // Broadcast code changes.
-  const handleCodeChange = (value) => {
-    const updatedCode = value ?? ''
-
-    codeRef.current = updatedCode
-    setCode(updatedCode)
-
-    if (applyingRemoteCode.current) return
-
-    if (socket.connected) {
-      socket.emit('codeTextUpdate', {
-        roomId,
-        code: updatedCode,
-      })
-    }
-  }
-
-  // Resize panels.
+  // Resizable whiteboard and code editor panels.
   const handleResizeStart = (event) => {
     event.preventDefault()
     isResizing.current = true
@@ -224,7 +270,7 @@ function Room({
     document.body.style.userSelect = 'none'
   }
 
-  const handleResizeMove = (event) => {
+  const handleResizeMove = useCallback((event) => {
     if (!isResizing.current) return
 
     const workspace = document.querySelector('.workspace')
@@ -239,13 +285,13 @@ function Room({
     if (newWidth >= 30 && newWidth <= 70) {
       setLeftPanelWidth(newWidth)
     }
-  }
+  }, [])
 
-  const handleResizeEnd = () => {
+  const handleResizeEnd = useCallback(() => {
     isResizing.current = false
     document.body.style.cursor = ''
     document.body.style.userSelect = ''
-  }
+  }, [])
 
   useEffect(() => {
     document.addEventListener('mousemove', handleResizeMove)
@@ -257,38 +303,28 @@ function Room({
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
     }
-  }, [])
+  }, [handleResizeMove, handleResizeEnd])
 
-  // Start drawing.
+  // Whiteboard drawing handlers.
   const handleMouseDown = (event) => {
-    const stage = event.target.getStage()
-    const position = stage.getPointerPosition()
-
+    const position = event.target.getStage().getPointerPosition()
     if (!position) return
 
     if (tool === 'text') {
-      setTextPosition({
-        x: position.x,
-        y: position.y,
-      })
+      setTextPosition({ x: position.x, y: position.y })
       setTextInput('')
       return
     }
 
     isDrawing.current = true
-    startPoint.current = {
-      x: position.x,
-      y: position.y,
-    }
+    startPoint.current = { x: position.x, y: position.y }
 
     if (tool === 'pen') {
       setLines((previous) => [
         ...previous,
         [position.x, position.y],
       ])
-    }
-
-    if (tool === 'rectangle') {
+    } else if (tool === 'rectangle') {
       setRectangles((previous) => [
         ...previous,
         {
@@ -301,16 +337,13 @@ function Room({
     }
   }
 
-  // Draw and broadcast cursor movement.
   const handleMouseMove = (event) => {
-    const stage = event.target.getStage()
-    const point = stage.getPointerPosition()
-
+    const point = event.target.getStage().getPointerPosition()
     if (!point) return
 
     const now = Date.now()
 
-    if (now - lastCursorSend.current >= 50) {
+    if (now - lastCursorSend.current >= 50 && socket.connected) {
       socket.emit('cursorMove', {
         roomId,
         x: point.x,
@@ -335,56 +368,46 @@ function Room({
           [...lastLine, point.x, point.y],
         ]
       })
-    }
-
-    if (tool === 'rectangle') {
+    } else if (tool === 'rectangle') {
       const start = startPoint.current
       if (!start) return
 
       setRectangles((previous) => {
         if (!previous.length) return previous
 
-        const lastRectangle = previous[previous.length - 1]
+        const last = previous[previous.length - 1]
 
         return [
           ...previous.slice(0, -1),
           {
-            ...lastRectangle,
-            width: point.x - start.x,
-            height: point.y - start.y,
+            x: Math.min(start.x, point.x),
+            y: Math.min(start.y, point.y),
+            width: Math.abs(point.x - start.x),
+            height: Math.abs(point.y - start.y),
           },
         ]
       })
     }
   }
 
-  // Broadcast completed drawings.
   const handleMouseUp = () => {
     if (!isDrawing.current) return
 
     if (tool === 'pen') {
-      setLines((currentLines) => {
-        if (!currentLines.length) return currentLines
-
-        socket.emit('drawLine', {
-          roomId,
-          line: currentLines[currentLines.length - 1],
-        })
-
-        return currentLines
+      setLines((current) => {
+        const line = current[current.length - 1]
+        if (line && socket.connected) {
+          socket.emit('drawLine', { roomId, line })
+        }
+        return current
       })
-    }
-
-    if (tool === 'rectangle') {
-      setRectangles((currentRectangles) => {
-        if (!currentRectangles.length) return currentRectangles
-
-        socket.emit('drawRectangle', {
-          roomId,
-          rectangle: currentRectangles[currentRectangles.length - 1],
-        })
-
-        return currentRectangles
+    } else if (tool === 'rectangle') {
+      setRectangles((current) => {
+        const rectangle = current[current.length - 1]
+        if (rectangle && socket.connected) {
+          socket.emit('drawRectangle', { roomId, rectangle })
+        }
+        return current
       })
     }
 
@@ -392,22 +415,20 @@ function Room({
     startPoint.current = null
   }
 
-  // Add whiteboard text.
   const handleAddText = () => {
     if (!textInput.trim() || !textPosition) return
 
-    const newText = {
+    const item = {
       x: textPosition.x,
       y: textPosition.y,
-      text: textInput,
+      text: textInput.trim(),
     }
 
-    setTexts((previous) => [...previous, newText])
+    setTexts((previous) => [...previous, item])
 
-    socket.emit('drawText', {
-      roomId,
-      text: newText,
-    })
+    if (socket.connected) {
+      socket.emit('drawText', { roomId, text: item })
+    }
 
     setTextInput('')
     setTextPosition(null)
@@ -418,7 +439,6 @@ function Room({
     setTextPosition(null)
   }
 
-  // Copy room link.
   const handleShareRoom = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href)
@@ -438,7 +458,6 @@ function Room({
 
         <div className="room-info">
           <span className="room-id">{roomId}</span>
-
           <span className="online-status">
             <span className="online-dot" />
             {onlineUsers.length} online
@@ -451,7 +470,10 @@ function Room({
                 title={user.userName}
                 className="online-user-chip"
               >
-                <span className="online-user-dot" />
+                <span
+                  className="online-user-dot"
+                  style={{ background: user.userColor }}
+                />
                 {user.userName}
               </span>
             ))}
@@ -539,7 +561,7 @@ function Room({
 
                 {rectangles.map((rectangle, index) => (
                   <Rect
-                    key={`rect-${index}`}
+                    key={`rectangle-${index}`}
                     x={rectangle.x}
                     y={rectangle.y}
                     width={rectangle.width}
@@ -580,9 +602,7 @@ function Room({
                 <input
                   autoFocus
                   value={textInput}
-                  onChange={(event) =>
-                    setTextInput(event.target.value)
-                  }
+                  onChange={(event) => setTextInput(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') handleAddText()
                     if (event.key === 'Escape') handleCancelText()
@@ -616,18 +636,17 @@ function Room({
         >
           <div className="panel-header">
             <h3>CODE EDITOR</h3>
-            <span className="editor-language">JavaScript</span>
+            <span className="editor-language">JavaScript · Yjs</span>
           </div>
 
           <div className="monaco-editor-container">
             <Editor
               key={roomId}
               height="100%"
-              language="javascript"
+              defaultLanguage="javascript"
+              defaultValue=""
               theme="vs-dark"
-              value={code}
               onMount={handleEditorMount}
-              onChange={handleCodeChange}
               options={{
                 readOnly: false,
                 domReadOnly: false,
@@ -657,7 +676,6 @@ function ReactCursor({ cursor }) {
         fill={cursor.userColor || '#34d399'}
         listening={false}
       />
-
       <Text
         x={cursor.x + 10}
         y={cursor.y - 10}

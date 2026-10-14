@@ -7,6 +7,7 @@ const mongoose = require('mongoose')
 const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const { Server } = require('socket.io')
+const Y = require('yjs')
 
 const Room = require('./models/Room')
 const User = require('./models/User')
@@ -15,12 +16,14 @@ dotenv.config()
 
 const app = express()
 const server = http.createServer(app)
-
 const PORT = process.env.PORT || 5000
 
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:5174',
+  ...(process.env.CLIENT_URL
+    ? process.env.CLIENT_URL.split(',').map((url) => url.trim())
+    : []),
 ]
 
 app.use(cors({ origin: allowedOrigins }))
@@ -33,7 +36,11 @@ const io = new Server(server, {
   },
 })
 
-// -------------------- AUTH HELPERS --------------------
+// Shared Yjs documents for rooms on this server instance.
+const yDocs = new Map()
+
+// Serializes MongoDB saves for each room.
+const saveQueues = new Map()
 
 function createToken(userId) {
   if (!process.env.JWT_SECRET) {
@@ -55,7 +62,7 @@ function publicUser(user) {
   }
 }
 
-// -------------------- REGISTER API --------------------
+// -------------------- AUTH APIs --------------------
 
 app.post('/api/auth/register', async (req, res) => {
   try {
@@ -83,7 +90,6 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     const normalizedEmail = email.trim().toLowerCase()
-
     const existingUser = await User.findOne({
       email: normalizedEmail,
     })
@@ -103,12 +109,10 @@ app.post('/api/auth/register', async (req, res) => {
       password: hashedPassword,
     })
 
-    const token = createToken(user._id)
-
     return res.status(201).json({
       success: true,
       message: 'Registration successful',
-      token,
+      token: createToken(user._id),
       user: publicUser(user),
     })
   } catch (error) {
@@ -127,8 +131,6 @@ app.post('/api/auth/register', async (req, res) => {
     })
   }
 })
-
-// -------------------- LOGIN API --------------------
 
 app.post('/api/auth/login', async (req, res) => {
   try {
@@ -160,12 +162,10 @@ app.post('/api/auth/login', async (req, res) => {
       })
     }
 
-    const token = createToken(user._id)
-
     return res.json({
       success: true,
       message: 'Login successful',
-      token,
+      token: createToken(user._id),
       user: publicUser(user),
     })
   } catch (error) {
@@ -198,11 +198,10 @@ app.get('/api/health', (req, res) => {
 // -------------------- ROOM HELPERS --------------------
 
 function getRoomUsers(roomId) {
-  const room = io.sockets.adapter.rooms.get(roomId)
+  const members = io.sockets.adapter.rooms.get(roomId)
+  if (!members) return []
 
-  if (!room) return []
-
-  return [...room]
+  return [...members]
     .map((socketId) => {
       const client = io.sockets.sockets.get(socketId)
 
@@ -229,7 +228,6 @@ async function getOrCreateRoom(roomId) {
       room = await Room.create({ roomId })
     } catch (error) {
       if (error.code !== 11000) throw error
-
       room = await Room.findOne({ roomId })
     }
   }
@@ -237,12 +235,91 @@ async function getOrCreateRoom(roomId) {
   return room
 }
 
+function saveYjsState(roomId, doc) {
+  const previous = saveQueues.get(roomId) || Promise.resolve()
+
+  // Read the latest document state when this queued save runs.
+  const next = previous
+    .catch(() => {})
+    .then(async () => {
+      const state = Buffer.from(
+        Y.encodeStateAsUpdate(doc)
+      ).toString('base64')
+
+      const code = doc.getText('monaco').toString()
+
+      await Room.updateOne(
+        { roomId },
+        {
+          $set: {
+            yjsState: state,
+            code,
+          },
+        }
+      )
+    })
+
+  saveQueues.set(roomId, next)
+
+  return next.finally(() => {
+    if (saveQueues.get(roomId) === next) {
+      saveQueues.delete(roomId)
+    }
+  })
+}
+
+async function getYDoc(roomId, savedRoom) {
+  const existingDoc = yDocs.get(roomId)
+  if (existingDoc) return existingDoc
+
+  const doc = new Y.Doc()
+  const sharedText = doc.getText('monaco')
+
+  if (savedRoom.yjsState) {
+    try {
+      const savedUpdate = Buffer.from(
+        savedRoom.yjsState,
+        'base64'
+      )
+
+      Y.applyUpdate(
+        doc,
+        new Uint8Array(savedUpdate),
+        'database'
+      )
+    } catch (error) {
+      doc.destroy()
+      throw new Error(
+        `Could not restore Yjs state for ${roomId}: ${error.message}`
+      )
+    }
+  } else if (savedRoom.code) {
+    // Migrate the previous plain-text code into Yjs.
+    sharedText.insert(0, savedRoom.code)
+  } else {
+    sharedText.insert(0, '// Start coding together...\n')
+  }
+
+  // Store the document before awaiting persistence so another
+  // join request in this process can reuse the same document.
+  yDocs.set(roomId, doc)
+
+  doc.on('update', () => {
+    saveYjsState(roomId, doc).catch((error) => {
+      console.error('Yjs persistence failed:', error.message)
+    })
+  })
+
+  await saveYjsState(roomId, doc)
+
+  return doc
+}
+
 // -------------------- SOCKET.IO --------------------
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id)
 
-  // Join a room and load saved whiteboard/code.
   socket.on('joinRoom', async (data) => {
     if (!data || typeof data.roomId !== 'string') return
 
@@ -252,7 +329,7 @@ io.on('connection', (socket) => {
     try {
       const savedRoom = await getOrCreateRoom(roomId)
 
-      // Leave any previously joined rooms.
+      // Leave any previous room before joining this one.
       for (const previousRoom of [...socket.rooms]) {
         if (previousRoom !== socket.id) {
           socket.leave(previousRoom)
@@ -260,25 +337,39 @@ io.on('connection', (socket) => {
         }
       }
 
-      socket.join(roomId)
-
       socket.data.user = {
-        userName: data.userName || 'Guest',
-        userColor: data.userColor || '#34d399',
+        userName:
+          typeof data.userName === 'string' && data.userName.trim()
+            ? data.userName.trim()
+            : 'Guest',
+        userColor:
+          typeof data.userColor === 'string'
+            ? data.userColor
+            : '#34d399',
       }
 
       socket.data.roomId = roomId
+      socket.join(roomId)
 
-      // Send existing saved content to the joining user.
-      socket.emit('canvasState', savedRoom.drawings)
-      socket.emit('codeTextState', savedRoom.code || '')
+      const doc = await getYDoc(roomId, savedRoom)
+
+      socket.emit('canvasState', savedRoom.drawings || {
+        lines: [],
+        rectangles: [],
+        texts: [],
+      })
+
+      // This event name and payload match Room.jsx.
+      socket.emit(
+        'yjsSync',
+        Array.from(Y.encodeStateAsUpdate(doc))
+      )
 
       broadcastRoomUsers(roomId)
 
       console.log(`${socket.data.user.userName} joined ${roomId}`)
     } catch (error) {
       console.error('Room loading failed:', error.message)
-
       socket.emit(
         'roomError',
         'Could not load room data. Please try again.'
@@ -286,10 +377,57 @@ io.on('connection', (socket) => {
     }
   })
 
-  // Save and broadcast pen drawings.
+  // -------------------- YJS CODE SYNC --------------------
+
+  socket.on('yjsUpdate', async (data) => {
+    if (
+      !data ||
+      typeof data.roomId !== 'string' ||
+      !Array.isArray(data.update) ||
+      socket.data.roomId !== data.roomId
+    ) {
+      return
+    }
+
+    const doc = yDocs.get(data.roomId)
+
+    if (!doc) {
+      socket.emit(
+        'roomError',
+        'Yjs document is not ready. Please rejoin the room.'
+      )
+      return
+    }
+
+    try {
+      const update = Uint8Array.from(data.update)
+
+      // Yjs merges concurrent edits using CRDT operations.
+      Y.applyUpdate(doc, update, socket.id)
+
+      // The document update listener queues MongoDB persistence.
+      // Send the update to every other room member.
+      socket.to(data.roomId).emit(
+        'yjsUpdate',
+        Array.from(update)
+      )
+
+      await saveYjsState(data.roomId, doc)
+    } catch (error) {
+      console.error('Yjs update failed:', error.message)
+      socket.emit(
+        'roomError',
+        'Could not sync collaborative code.'
+      )
+    }
+  })
+
+  // -------------------- WHITEBOARD --------------------
+
   socket.on('drawLine', async (data) => {
     if (
-      !data?.roomId ||
+      !data ||
+      typeof data.roomId !== 'string' ||
       !Array.isArray(data.line) ||
       socket.data.roomId !== data.roomId
     ) {
@@ -314,10 +452,10 @@ io.on('connection', (socket) => {
     }
   })
 
-  // Save and broadcast rectangles.
   socket.on('drawRectangle', async (data) => {
     if (
-      !data?.roomId ||
+      !data ||
+      typeof data.roomId !== 'string' ||
       !data.rectangle ||
       socket.data.roomId !== data.roomId
     ) {
@@ -345,10 +483,10 @@ io.on('connection', (socket) => {
     }
   })
 
-  // Save and broadcast text objects.
   socket.on('drawText', async (data) => {
     if (
-      !data?.roomId ||
+      !data ||
+      typeof data.roomId !== 'string' ||
       !data.text ||
       socket.data.roomId !== data.roomId
     ) {
@@ -373,10 +511,12 @@ io.on('connection', (socket) => {
     }
   })
 
-  // Broadcast cursor movement to other room members.
+  // -------------------- REMOTE CURSORS --------------------
+
   socket.on('cursorMove', (data) => {
     if (
-      !data?.roomId ||
+      !data ||
+      typeof data.roomId !== 'string' ||
       socket.data.roomId !== data.roomId ||
       typeof data.x !== 'number' ||
       typeof data.y !== 'number'
@@ -388,43 +528,11 @@ io.on('connection', (socket) => {
       socketId: socket.id,
       x: data.x,
       y: data.y,
-      userName: data.userName || 'Guest',
-      userColor: data.userColor || '#34d399',
+      userName: socket.data.user?.userName || 'Guest',
+      userColor: socket.data.user?.userColor || '#34d399',
     })
   })
 
-  // Save and broadcast the latest code.
-  socket.on('codeTextUpdate', async (data) => {
-    if (
-      !data?.roomId ||
-      typeof data.code !== 'string' ||
-      socket.data.roomId !== data.roomId
-    ) {
-      return
-    }
-
-    try {
-      const result = await Room.updateOne(
-        { roomId: data.roomId },
-        { $set: { code: data.code } }
-      )
-
-      if (!result.matchedCount) {
-        socket.emit('roomError', 'Room not found. Please rejoin.')
-        return
-      }
-
-      socket.to(data.roomId).emit(
-        'codeTextUpdate',
-        data.code
-      )
-    } catch (error) {
-      console.error('Code save failed:', error.message)
-      socket.emit('roomError', 'Could not save code.')
-    }
-  })
-
-  // Handle disconnection.
   socket.on('disconnect', () => {
     const roomId = socket.data.roomId
 
@@ -450,7 +558,6 @@ async function startServer() {
     }
 
     await mongoose.connect(process.env.MONGODB_URI)
-
     console.log('MongoDB connected successfully')
 
     server.listen(PORT, () => {
